@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
 import Image from "next/image"
@@ -10,13 +10,13 @@ const Sidenav = () => {
     const [openMenus, setOpenMenus] = useState<Set<string>>(new Set())
     const pathname = usePathname()
 
-    const isMenuActive = (item: Menu): boolean => {
+    const isMenuActive = useCallback((item: Menu): boolean => {
         if (pathname === item.link) return true
         if (item.children) {
             return item.children.some((child: Menu) => isMenuActive(child))
         }
         return false
-    }
+    }, [pathname])
 
     const isPathActive = (link: string): boolean => {
         return pathname === link || pathname.startsWith(link + '/')
