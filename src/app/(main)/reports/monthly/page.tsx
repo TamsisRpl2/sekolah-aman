@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from "react"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area } from 'recharts'
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from 'recharts'
 
 const MonthlyReportPage = () => {
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth())

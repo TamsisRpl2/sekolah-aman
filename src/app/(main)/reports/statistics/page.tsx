@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from "react"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, Area, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
 
 const StatisticsPage = () => {
     const [selectedPeriod, setSelectedPeriod] = useState('semester')
@@ -40,14 +40,6 @@ const StatisticsPage = () => {
         { level: 'Kelas XII', violations: 90, students: 15, avgPerStudent: 6.0 },
     ]
 
-    // Data perbandingan jurusan
-    const majorData = [
-        { major: 'RPL', violations: 145, students: 25, color: '#3b82f6' },
-        { major: 'TKJ', violations: 120, students: 20, color: '#10b981' },
-        { major: 'MM', violations: 85, students: 15, color: '#f59e0b' },
-        { major: 'TBSM', violations: 30, students: 5, color: '#8b5cf6' },
-    ]
-
     // Data radar chart untuk analisis mendalam
     const radarData = [
         { subject: 'Kedisiplinan', A: 65, B: 85, fullMark: 100 },
@@ -56,18 +48,6 @@ const StatisticsPage = () => {
         { subject: 'Tingkah Laku', A: 80, B: 92, fullMark: 100 },
         { subject: 'Akademik', A: 75, B: 87, fullMark: 100 },
         { subject: 'Ekstrakurikuler', A: 85, B: 95, fullMark: 100 },
-    ]
-
-    // Data time series mingguan
-    const weeklyTrend = [
-        { week: 'Week 1', violations: 12, resolved: 10 },
-        { week: 'Week 2', violations: 18, resolved: 16 },
-        { week: 'Week 3', violations: 8, resolved: 8 },
-        { week: 'Week 4', violations: 15, resolved: 14 },
-        { week: 'Week 5', violations: 22, resolved: 20 },
-        { week: 'Week 6', violations: 11, resolved: 11 },
-        { week: 'Week 7', violations: 19, resolved: 17 },
-        { week: 'Week 8', violations: 14, resolved: 13 },
     ]
 
     const currentPeriodData = selectedPeriod === 'semester' ? semesterData : yearlyTrend
@@ -425,7 +405,7 @@ const StatisticsPage = () => {
                             </div>
                             <div className="flex items-center gap-2">
                                 <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
-                                <span>Kasus "gaduh di kelas" meningkat</span>
+                                <span>Kasus gaduh di kelas meningkat</span>
                             </div>
                             <div className="flex items-center gap-2">
                                 <div className="w-2 h-2 bg-amber-500 rounded-full"></div>

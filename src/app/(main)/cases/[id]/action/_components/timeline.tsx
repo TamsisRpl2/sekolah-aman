@@ -46,7 +46,7 @@ const Timeline = () => {
                 <time className="font-mono italic">1998</time>
                 <div className="text-lg font-black">iMac</div>
                 iMac is a family of all-in-one Mac desktop computers designed and built by Apple Inc. It has
-                been the primary part of Apple's consumer desktop offerings since its debut in August 1998,
+                been the primary part of Apples consumer desktop offerings since its debut in August 1998,
                 and has evolved through seven distinct forms
             </div>
             <hr />

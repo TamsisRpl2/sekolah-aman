@@ -40,7 +40,7 @@ const Sidenav = () => {
             }
         })
         setOpenMenus(newOpenMenus)
-    }, [pathname])
+    }, [pathname, isMenuActive])
 
     const renderMenuItem = (item: Menu, isChild = false) => {
         const hasChildren = item.children && item.children.length > 0

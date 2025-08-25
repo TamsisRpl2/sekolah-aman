@@ -1,5 +1,4 @@
 import dynamic from "next/dynamic";
-import Image from "next/image";
 
 const Navbar = dynamic(() => import("./_components/navbar"))
 const Hero = dynamic(() => import("./_components/hero"))
