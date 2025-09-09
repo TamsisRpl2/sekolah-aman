@@ -1,6 +1,19 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        hostname: "images.unsplash.com"
+      },
+      {
+        hostname: "avatar.iran.liara.run"
+      },
+      {
+        hostname: "res.cloudinary.com"
+      }
+    ]
+  },
   redirects: async () => {
     return [
       {

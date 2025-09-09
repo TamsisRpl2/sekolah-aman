@@ -1,14 +1,13 @@
 import Image from "next/image"
 import Link from "next/link"
+import { IoMenu } from "react-icons/io5"
 
 const Navbar = () => {
     return <div className="navbar bg-transparent absolute top-0 left-0 right-0 z-50">
         <div className="navbar-start">
             <div className="dropdown">
                 <div tabIndex={0} role="button" className="btn btn-ghost lg:hidden">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h8m-8 6h16"></path>
-                    </svg>
+                    <IoMenu className="w-5 h-5" />
                 </div>
                 <ul tabIndex={0} className="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100/95 backdrop-blur-sm rounded-box w-52">
                     <li><Link href="">Beranda</Link></li>

@@ -1,0 +1,356 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========================================
+// ENUM DEFINITIONS
+// ========================================
+
+enum Role {
+  ADMIN
+  GURU
+}
+
+enum ViolationLevel {
+  RINGAN
+  SEDANG
+  BERAT
+}
+
+enum CaseStatus {
+  PENDING // Menunggu tindakan
+  PROSES // Dalam proses tindakan
+  SELESAI // Pencatatan selesai
+  DIBATALKAN // Case dibatalkan
+}
+
+enum Gender {
+  L // Laki-laki
+  P // Perempuan
+}
+
+// ========================================
+// USER MANAGEMENT & AUTHENTICATION
+// ========================================
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verificationtokens")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  password    String
+  name        String
+  role        Role     @default(GURU)
+  phone       String?
+  address     String?
+  isActive    Boolean  @default(true)
+  emailVerified DateTime?
+  image       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // NextAuth relations
+  accounts      Account[]
+  sessions      Session[]
+
+  // Relasi untuk tracking aktivitas
+  violationCases    ViolationCase[]    @relation("CaseInputBy")
+  caseActions       CaseAction[]       @relation("ActionBy")
+  editedActions     CaseAction[]       @relation("ActionEditedBy")
+  deletedActions    CaseAction[]       @relation("ActionDeletedBy")
+  sanctions         Sanction[]         @relation("SanctionBy")
+  auditLogs         AuditLog[]         @relation("LogBy")
+
+  @@map("users")
+}
+
+// ========================================
+// MASTER DATA - STUDENTS
+// ========================================
+
+model Student {
+  id           String    @id @default(cuid())
+  nis          String    @unique
+  name         String
+  gender       Gender
+  birthPlace   String?
+  birthDate    DateTime?
+  address      String?
+  phone        String?
+  parentPhone  String?
+  parentName   String?
+  major        String? // RPL, TKJ, MM, etc
+  academicYear String // 2024/2025
+  photo        String?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relasi
+  violationCases ViolationCase[]
+
+  @@map("students")
+}
+
+// ========================================
+// MASTER DATA - VIOLATIONS
+// ========================================
+
+model ViolationCategory {
+  id          String         @id @default(cuid())
+  code        String         @unique // Pasal (1, 2, 3)
+  name        String // Pelanggaran Ringan, Sedang, Berat
+  level       ViolationLevel
+  description String?
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  // Relasi
+  violations Violation[]
+
+  @@map("violation_categories")
+}
+
+model Violation {
+  id          String   @id @default(cuid())
+  categoryId  String
+  code        String   @unique // 1.A, 1.B, 2.A, 3.A
+  name        String // Keterlambatan & Kehadiran
+  description String // Deskripsi detail pelanggaran
+  maxCount    Int // Maksimal pelanggaran per periode
+  period      String // semester, bulan, tahun
+  points      Int      @default(0) // Point pelanggaran untuk scoring
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relasi
+  category         ViolationCategory       @relation(fields: [categoryId], references: [id])
+  violationCases   ViolationCase[]
+  sanctionTypes    ViolationSanctionType[] // Many-to-many relation
+
+  @@map("violations")
+}
+
+// Junction table for Violation-SanctionType many-to-many relationship
+model ViolationSanctionType {
+  id             String      @id @default(cuid())
+  violationId    String
+  sanctionTypeId String
+  createdAt      DateTime    @default(now())
+
+  // Relasi
+  violation    Violation    @relation(fields: [violationId], references: [id], onDelete: Cascade)
+  sanctionType SanctionType @relation(fields: [sanctionTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([violationId, sanctionTypeId])
+  @@map("violation_sanction_types")
+}
+
+// ========================================
+// CASE MANAGEMENT
+// ========================================
+
+model ViolationCase {
+  id            String     @id @default(cuid())
+  caseNumber    String     @unique // Auto-generated: VC-2025-001
+  studentId     String
+  violationId   String
+  inputById     String // User yang input (GURU/ADMIN)
+  violationDate DateTime
+  classLevel    String // Kelas saat terjadi pelanggaran (X, XI, XII)
+  description   String // Deskripsi detail kejadian
+  evidenceUrls  String[] // Array URLs bukti file (foto, dokumen)
+  location      String? // Lokasi kejadian
+  witnesses     String? // Saksi-saksi
+  status        CaseStatus @default(PENDING)
+  notes         String? // Catatan tambahan
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  // Relasi
+  student   Student   @relation(fields: [studentId], references: [id])
+  violation Violation @relation(fields: [violationId], references: [id])
+  inputBy   User      @relation("CaseInputBy", fields: [inputById], references: [id])
+
+  // Relasi tindakan dan sanksi
+  actions   CaseAction[]
+  sanctions Sanction[]
+
+  @@map("violation_cases")
+}
+
+// ========================================
+// CASE ACTIONS & FOLLOW-UP
+// ========================================
+
+model CaseAction {
+  id             String    @id @default(cuid())
+  caseId         String
+  actionById     String // User yang melakukan tindakan
+  sanctionTypeId String? // ID dari sanction type yang dipilih
+  actionDate     DateTime  @default(now())
+  actionType     String // DEPRECATED: akan diganti dengan sanctionTypeId
+  description    String // Deskripsi tindakan
+  evidenceUrls   String[] // Array URLs bukti tindakan (foto, dokumen)
+  followUpDate   DateTime? // Tanggal follow-up (jika ada)
+  isCompleted    Boolean   @default(false)
+  notes          String?
+  
+  // Audit fields
+  editedById     String? // User yang terakhir mengedit
+  editedAt       DateTime? // Waktu terakhir diedit
+  deletedById    String? // User yang menghapus (soft delete)
+  deletedAt      DateTime? // Waktu dihapus (soft delete)
+  
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Relasi
+  case        ViolationCase @relation(fields: [caseId], references: [id])
+  actionBy    User          @relation("ActionBy", fields: [actionById], references: [id])
+  editedBy    User?         @relation("ActionEditedBy", fields: [editedById], references: [id])
+  deletedBy   User?         @relation("ActionDeletedBy", fields: [deletedById], references: [id])
+  sanctionType SanctionType? @relation(fields: [sanctionTypeId], references: [id])
+
+  @@map("case_actions")
+}
+
+// ========================================
+// SANCTIONS MANAGEMENT
+// ========================================
+
+model SanctionType {
+  id          String         @id @default(cuid())
+  name        String         @unique // Teguran Lisan, Skorsing, dll
+  level       ViolationLevel
+  description String?
+  duration    Int? // Durasi sanksi (hari)
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  // Relasi
+  sanctions     Sanction[]
+  violationTypes ViolationSanctionType[] // Many-to-many relation
+  caseActions   CaseAction[] // Actions yang menggunakan sanction type ini
+
+  @@map("sanction_types")
+}
+
+model Sanction {
+  id             String    @id @default(cuid())
+  caseId         String
+  sanctionTypeId String
+  givenById      String // User yang memberikan sanksi
+  startDate      DateTime
+  endDate        DateTime?
+  description    String?
+  isCompleted    Boolean   @default(false)
+  completedDate  DateTime?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Relasi
+  case         ViolationCase @relation(fields: [caseId], references: [id])
+  sanctionType SanctionType  @relation(fields: [sanctionTypeId], references: [id])
+  givenBy      User          @relation("SanctionBy", fields: [givenById], references: [id])
+
+  @@map("sanctions")
+}
+
+// ========================================
+// AUDIT TRAIL & LOGGING
+// ========================================
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String // CREATE, UPDATE, DELETE, LOGIN, etc
+  entity    String // ViolationCase, Student, etc
+  entityId  String?
+  oldData   Json? // Data sebelum perubahan
+  newData   Json? // Data setelah perubahan
+  ipAddress String?
+  userAgent String?
+  timestamp DateTime @default(now())
+
+  // Relasi
+  user User? @relation("LogBy", fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// ========================================
+// REPORTING & ANALYTICS
+// ========================================
+
+model Report {
+  id          String   @id @default(cuid())
+  title       String
+  type        String // MONTHLY, YEARLY, CUSTOM
+  period      String // 2025-01, 2025, dll
+  data        Json // Data laporan dalam JSON
+  generatedBy String?
+  createdAt   DateTime @default(now())
+
+  @@map("reports")
+}
+
+// ========================================
+// SYSTEM CONFIGURATION
+// ========================================
+
+model Config {
+  id          String   @id @default(cuid())
+  key         String   @unique // ACADEMIC_YEAR, SCHOOL_NAME, etc
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("configs")
+}

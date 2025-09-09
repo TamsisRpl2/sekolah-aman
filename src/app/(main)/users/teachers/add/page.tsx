@@ -1,21 +1,23 @@
+import { redirect } from "next/navigation"
+import { getServerSession } from "next-auth/next"
+import { authOptions } from "@/lib/auth"
 import dynamic from 'next/dynamic'
 
-const Breadcrumbs = dynamic(() => import('@/components/breadcrumbs'))
-const Form = dynamic(() => import('./_components/form'))
+const AddTeacherForm = dynamic(() => import("./_components/form"), {
+  loading: () => <div className="flex justify-center p-8"><span className="loading loading-spinner loading-lg"></span></div>
+})
 
-const page = () => {
-    return <main>
-        <h1 className="text-2xl font-bold">Tambah Guru</h1>
-        <Breadcrumbs items={[
-            { text: 'Users', link: '/users' },
-            { text: 'Daftar Guru', link: '/users/teachers' },
-            { text: 'Tambah Guru' },
-        ]} />
-
-        <div className="mt-5">
-            <Form />
-        </div>
-    </main>
+export const metadata = {
+    title: "Tambah Guru - Sekolah Aman",
+    description: "Tambah guru baru ke sistem"
 }
 
-export default page
+export default async function AddTeacherPage() {
+    const session = await getServerSession(authOptions)
+    
+    if (!session?.user || session.user.role !== "ADMIN") {
+        redirect("/auth/signin")
+    }
+
+    return <AddTeacherForm />
+}

@@ -1,20 +1,27 @@
+import { use } from 'react'
 import dynamic from 'next/dynamic'
+import Breadcrumbs from '@/components/breadcrumbs'
 
-const Breadcrumbs = dynamic(() => import('@/components/breadcrumbs'))
-const Form = dynamic(() => import('./_components/form'))
+const StudentDetailClient = dynamic(() => import('./_components/student-detail-client'))
 
-const page = () => {
-    return <main>
-        <h1 className="text-2xl font-bold">Edit Siswa</h1>
-        <Breadcrumbs items={[
-            { text: 'Daftar Siswa', 'link': '/students' },
-            { text: 'Edit Siswa' },
-        ]} />
-
-        <div className="mt-10">
-            <Form />
-        </div>
-    </main>
+interface Props {
+    params: Promise<{ id: string }>
 }
 
-export default page
+export default function StudentDetailPage({ params }: Props) {
+    const resolvedParams = use(params)
+
+    return (
+        <main>
+            <h1 className="text-2xl font-bold">Detail Siswa</h1>
+            <Breadcrumbs items={[
+                { text: 'Daftar Siswa', link: '/students' },
+                { text: 'Detail Siswa' },
+            ]} />
+
+            <div className="mt-10">
+                <StudentDetailClient studentId={resolvedParams.id} />
+            </div>
+        </main>
+    )
+}

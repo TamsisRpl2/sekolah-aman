@@ -1,27 +1,35 @@
 import dynamic from 'next/dynamic'
+import { SanctionHistoryFilters } from '@/types/sanctions-history'
+import Breadcrumbs from '@/components/breadcrumbs'
 
-const Breadcrumbs = dynamic(() => import('@/components/breadcrumbs'))
+const SanctionsHistoryClient = dynamic(() => import('./_components/sanctions-history-client'))
 
-const page = () => {
-    return <main>
-        <h1 className="text-2xl font-bold">Riwayat Sanksi</h1>
-        <Breadcrumbs items={[
-            { text: 'Riwayat Sanksi' }
-        ]} />
+const SanctionsHistoryPage = () => {
+    const initialFilters: SanctionHistoryFilters = {
+        page: 1,
+        limit: 10,
+        search: '',
+        status: '',
+        startDate: '',
+        endDate: ''
+    }
 
-        <div className="mt-10">
-            <table className="table">
-                <thead>
-                    <tr>
-                        <th>Nama Siswa</th>
-                        <th>Tindakan</th>
-                        <th>Tanggal</th>
-                        <th>Dokumentasi Tindakan</th>
-                    </tr>
-                </thead>
-            </table>
-        </div>
-    </main>
+    return (
+        <main className="p-6">
+            <div className="flex items-center justify-between mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Riwayat Sanksi</h1>
+                    <p className="text-gray-600 mt-1">Kelola dan pantau riwayat sanksi yang telah diberikan</p>
+                </div>
+            </div>
+
+            <Breadcrumbs items={[
+                { text: 'Riwayat Sanksi' }
+            ]} />
+
+            <SanctionsHistoryClient initialFilters={initialFilters} />
+        </main>
+    )
 }
 
-export default page
+export default SanctionsHistoryPage

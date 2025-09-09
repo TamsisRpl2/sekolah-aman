@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation"
 import Link from "next/link"
 import Image from "next/image"
 import { menu, Menu } from "./menu"
+import { IoChevronDown } from "react-icons/io5"
 
 const Sidenav = () => {
     const [openMenus, setOpenMenus] = useState<Set<string>>(new Set())
@@ -63,14 +64,9 @@ const Sidenav = () => {
                                 {item.icon}
                                 <span>{item.text}</span>
                             </div>
-                            <svg 
+                            <IoChevronDown 
                                 className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-                                fill="none" 
-                                stroke="currentColor" 
-                                viewBox="0 0 24 24"
-                            >
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
-                            </svg>
+                            />
                         </button>
                         {isOpen && (
                             <ul className="ml-4 mt-2 space-y-1">
@@ -117,15 +113,13 @@ const Sidenav = () => {
                     </div>
                 </div>
 
-
-                <div className="p-4">
+<div className="p-4">
                     <ul className="space-y-2">
                         {menu.map(item => renderMenuItem(item))}
                     </ul>
                 </div>
 
-
-                <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-base-300">
+<div className="absolute bottom-0 left-0 right-0 p-4 border-t border-base-300">
                     <div className="text-center">
                         <p className="text-xs text-base-content/60">
                             SMK Taman Siswa 2 Jakarta

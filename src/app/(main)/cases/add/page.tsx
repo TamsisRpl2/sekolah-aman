@@ -5,10 +5,10 @@ const Form = dynamic(() => import('./_components/form'))
 
 const page = () => {
     return <main>
-        <h1 className="text-2xl font-bold">Tambah Pelanggaran</h1>
+        <h1 className="text-2xl font-bold">Tambah Kasus Pelanggaran</h1>
         <Breadcrumbs items={[
-            { text: 'Daftar Pelanggaran', 'link': '/cases' },
-            { text: 'Tambah Pelanggaran' },
+            { text: 'Daftar Kasus', link: '/cases' },
+            { text: 'Tambah Kasus' },
         ]} />
 
         <div className="mt-5">
