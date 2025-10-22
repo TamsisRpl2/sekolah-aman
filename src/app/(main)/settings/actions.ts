@@ -142,8 +142,8 @@ export async function getSystemStats() {
             prisma.user.count({ where: { isActive: true } }),
             prisma.student.count({ where: { isActive: true } }),
             prisma.violationCase.count(),
-            prisma.violation.count({ where: { isActive: true } }),
-            prisma.sanctionType.count({ where: { isActive: true } }),
+            prisma.violation.count(),
+            prisma.sanctionType.count(),
             prisma.auditLog.count({
                 where: {
                     action: 'LOGIN',

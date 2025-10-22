@@ -4,12 +4,16 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { IoArrowBack, IoSave, IoPerson, IoSchool } from 'react-icons/io5'
+import dynamic from 'next/dynamic'
 import { createStudentAndRedirect } from '../actions'
+
+const FileUpload = dynamic(() => import('@/components/file-upload'), { ssr: false })
 
 export default function Form() {
     const [error, setError] = useState<string | null>(null)
     const [isPending, startTransition] = useTransition()
     const router = useRouter()
+    const [photo, setPhoto] = useState<string>('')
 
     const [hasValue, setHasValue] = useState<Record<string, boolean>>({
         name: false,
@@ -34,7 +38,13 @@ export default function Form() {
         e.preventDefault()
         setError(null)
 
+        if (!photo) {
+            setError('Foto siswa wajib diupload')
+            return
+        }
+
         const formData = new FormData(e.currentTarget)
+        formData.append('photo', photo)
 
         startTransition(async () => {
             try {
@@ -134,6 +144,18 @@ export default function Form() {
                                         </label>
                                     </div>
                                 </div>
+                            </div>
+
+                            <div className="group">
+                                <FileUpload
+                                    value={photo}
+                                    onChange={setPhoto}
+                                    accept="image/*"
+                                    maxSize={30}
+                                    label="Foto Siswa"
+                                    placeholder="Upload foto siswa (wajib, max 30MB)"
+                                    required
+                                />
                             </div>
                         </div>
 

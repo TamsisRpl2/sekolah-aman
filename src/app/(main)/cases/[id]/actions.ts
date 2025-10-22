@@ -23,13 +23,28 @@ export async function getCase(caseId: string) {
                     select: {
                         id: true,
                         name: true,
-                        description: true,
+                        code: true,
+                        points: true,
                         category: {
                             select: {
+                                id: true,
                                 name: true,
-                                level: true
+                                level: true,
+                                code: true
+                            }
+                        },
+                        violationTypes: {
+                            select: {
+                                id: true,
+                                description: true
                             }
                         }
+                    }
+                },
+                violationType: {
+                    select: {
+                        id: true,
+                        description: true
                     }
                 },
                 inputBy: {
@@ -86,6 +101,7 @@ export async function getCase(caseId: string) {
 export async function updateCase(caseId: string, data: {
     studentId?: string
     violationId?: string
+    violationTypeId?: string
     violationDate?: string
     classLevel?: string
     description?: string
@@ -100,6 +116,7 @@ export async function updateCase(caseId: string, data: {
 
         if (data.studentId) updateData.studentId = data.studentId
         if (data.violationId) updateData.violationId = data.violationId
+        if (data.violationTypeId !== undefined) updateData.violationTypeId = data.violationTypeId
         if (data.violationDate) updateData.violationDate = new Date(data.violationDate)
         if (data.classLevel) updateData.classLevel = data.classLevel
         if (data.description) updateData.description = data.description
@@ -148,4 +165,58 @@ export async function deleteCaseById(caseId: string) {
 export async function deleteCaseAndRedirect(caseId: string) {
     await deleteCaseById(caseId)
     redirect('/cases')
+}
+
+export async function getStudentsForCase() {
+    try {
+        const students = await prisma.student.findMany({
+            where: { isActive: true },
+            select: {
+                id: true,
+                name: true,
+                nis: true,
+                major: true,
+                academicYear: true
+            },
+            orderBy: { name: 'asc' }
+        })
+        return students
+    } catch (error) {
+        console.error('Error fetching students:', error)
+        throw new Error('Gagal mengambil data siswa')
+    }
+}
+
+export async function getViolationsForCase() {
+    try {
+        const violations = await prisma.violation.findMany({
+            include: {
+                category: {
+                    select: {
+                        id: true,
+                        name: true,
+                        level: true,
+                        code: true
+                    }
+                },
+                violationTypes: {
+                    select: {
+                        id: true,
+                        description: true
+                    },
+                    orderBy: {
+                        description: 'asc'
+                    }
+                }
+            },
+            orderBy: [
+                { category: { code: 'asc' } },
+                { code: 'asc' }
+            ]
+        })
+        return violations
+    } catch (error) {
+        console.error('Error fetching violations:', error)
+        throw new Error('Gagal mengambil data pelanggaran')
+    }
 }

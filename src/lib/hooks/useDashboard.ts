@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { getDashboardStats } from '@/app/(main)/dashboard/actions'
 
 interface DashboardSummary {
     problematicStudents: number
@@ -63,13 +64,8 @@ export const useDashboard = () => {
         const fetchDashboardData = async () => {
             try {
                 setLoading(true)
-                const response = await fetch('/api/dashboard')
-                
-                if (!response.ok) {
-                    throw new Error('Failed to fetch dashboard data')
-                }
-
-                const dashboardData = await response.json()
+                setError(null)
+                const dashboardData = await getDashboardStats()
                 setData(dashboardData)
             } catch (err) {
                 console.error('Error fetching dashboard data:', err)
@@ -85,13 +81,8 @@ export const useDashboard = () => {
     const refresh = async () => {
         try {
             setLoading(true)
-            const response = await fetch('/api/dashboard')
-            
-            if (!response.ok) {
-                throw new Error('Failed to fetch dashboard data')
-            }
-
-            const dashboardData = await response.json()
+            setError(null)
+            const dashboardData = await getDashboardStats()
             setData(dashboardData)
         } catch (err) {
             console.error('Error refreshing dashboard data:', err)

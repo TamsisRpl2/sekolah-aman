@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { IoImage, IoDocument, IoLink } from 'react-icons/io5'
 
 interface EvidenceDisplayProps {
@@ -50,11 +51,13 @@ const EvidenceDisplay = ({
               className="group relative"
             >
               {isImage ? (
-                <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden border border-gray-200 hover:border-blue-300 transition-colors">
-                  <img
+                <div className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden border border-gray-200 hover:border-blue-300 transition-colors">
+                  <Image
                     src={url}
                     alt={`Evidence ${index + 1}`}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                    fill
+                    sizes="(max-width: 768px) 50vw, 33vw"
+                    className="object-cover group-hover:scale-105 transition-transform duration-200"
                     loading="lazy"
                   />
                   <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-200 flex items-center justify-center">

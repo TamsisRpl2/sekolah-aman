@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { SanctionHistoryFilters } from '@/types/sanctions-history'
 import { useSanctionsHistory } from '@/lib/hooks/useSanctionsHistory'
 import { IoSearch, IoCalendar, IoDocument, IoEye, IoCheckmarkCircle, IoTime, IoFilter, IoDownload } from 'react-icons/io5'
@@ -220,9 +221,9 @@ export default function SanctionsHistoryClient({ initialFilters }: SanctionsHist
                                             <td>
                                                 <div className="flex items-center gap-3">
                                                     <div className="avatar">
-                                                        <div className="mask mask-squircle w-12 h-12">
+                                                        <div className="mask mask-squircle w-12 h-12 relative">
                                                             {item.case.student.photo ? (
-                                                                <img src={item.case.student.photo} alt={item.case.student.name} />
+                                                                <Image src={item.case.student.photo} alt={item.case.student.name} fill sizes="48px" className="object-cover" />
                                                             ) : (
                                                                 <div className="bg-gray-200 w-full h-full flex items-center justify-center">
                                                                     <span className="text-gray-500 text-xs">

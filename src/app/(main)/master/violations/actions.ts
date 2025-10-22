@@ -37,12 +37,11 @@ export async function getViolations(params?: {
         const limit = params?.limit || 10
         const skip = (page - 1) * limit
 
-        const where: any = { isActive: true }
+        const where: any = {}
 
         if (params?.search) {
             where.OR = [
                 { name: { contains: params.search, mode: 'insensitive' } },
-                { description: { contains: params.search, mode: 'insensitive' } },
                 { code: { contains: params.search, mode: 'insensitive' } }
             ]
         }
@@ -69,6 +68,12 @@ export async function getViolations(params?: {
                             name: true,
                             level: true,
                             code: true
+                        }
+                    },
+                    violationTypes: {
+                        select: {
+                            id: true,
+                            description: true
                         }
                     },
                     sanctionTypes: {
@@ -106,25 +111,36 @@ export async function getViolations(params?: {
     }
 }
 
+export async function getSanctionTypes() {
+    try {
+        const sanctionTypes = await prisma.sanctionType.findMany({
+            where: { isActive: true },
+            orderBy: { name: 'asc' }
+        })
+
+        return sanctionTypes
+    } catch (error) {
+        console.error('Error fetching sanction types:', error)
+        throw new Error('Gagal mengambil data jenis sanksi')
+    }
+}
+
 export async function getViolationStats() {
     try {
         const [total, ringan, sedang, berat, categories] = await Promise.all([
-            prisma.violation.count({ where: { isActive: true } }),
+            prisma.violation.count(),
             prisma.violation.count({ 
                 where: { 
-                    isActive: true,
                     category: { level: 'RINGAN' }
                 }
             }),
             prisma.violation.count({ 
                 where: { 
-                    isActive: true,
                     category: { level: 'SEDANG' }
                 }
             }),
             prisma.violation.count({ 
                 where: { 
-                    isActive: true,
                     category: { level: 'BERAT' }
                 }
             }),
@@ -132,10 +148,12 @@ export async function getViolationStats() {
         ])
 
         return {
-            total,
-            ringan,
-            sedang,
-            berat,
+            totalViolations: total,
+            violationsByLevel: {
+                ringan,
+                sedang,
+                berat
+            },
             categories
         }
     } catch (error) {
@@ -185,18 +203,15 @@ export async function createViolation(data: {
     categoryId: string
     code: string
     name: string
-    description: string
-    maxCount: number
-    period: string
-    points?: number
-    sanctionTypeIds?: string[]
+    types?: string[]
+    points?: string
+    sanctions?: string[]
 }) {
     try {
         
         const existing = await prisma.violation.findFirst({
             where: { 
-                code: { equals: data.code, mode: 'insensitive' },
-                isActive: true
+                code: { equals: data.code, mode: 'insensitive' }
             }
         })
 
@@ -209,21 +224,55 @@ export async function createViolation(data: {
                 categoryId: data.categoryId,
                 code: data.code,
                 name: data.name,
-                description: data.description,
-                maxCount: data.maxCount,
-                period: data.period,
-                points: data.points || 0,
-                isActive: true
+                points: data.points || 'SP 1'
             }
         })
 
-if (data.sanctionTypeIds && data.sanctionTypeIds.length > 0) {
-            await prisma.violationSanctionType.createMany({
-                data: data.sanctionTypeIds.map(sanctionTypeId => ({
-                    violationId: violation.id,
-                    sanctionTypeId
-                }))
-            })
+        // Handle violation types - create multiple types
+        if (data.types && data.types.length > 0) {
+            const validTypes = data.types.filter(t => t.trim() !== '')
+            
+            for (const typeDesc of validTypes) {
+                await prisma.violationType.create({
+                    data: {
+                        violationId: violation.id,
+                        description: typeDesc.trim()
+                    }
+                })
+            }
+        }
+
+        // Handle sanctions - create sanctionTypes if not exist and link them
+        if (data.sanctions && data.sanctions.length > 0) {
+            const validSanctions = data.sanctions.filter(s => s.trim() !== '')
+            
+            for (const sanctionName of validSanctions) {
+                // Check if sanctionType exists, if not create it
+                let sanctionType = await prisma.sanctionType.findFirst({
+                    where: { 
+                        name: { equals: sanctionName.trim(), mode: 'insensitive' }
+                    }
+                })
+
+                if (!sanctionType) {
+                    // Create new sanctionType with default values
+                    sanctionType = await prisma.sanctionType.create({
+                        data: {
+                            name: sanctionName.trim(),
+                            level: 'RINGAN', // default level
+                            isActive: true
+                        }
+                    })
+                }
+
+                // Link violation with sanctionType
+                await prisma.violationSanctionType.create({
+                    data: {
+                        violationId: violation.id,
+                        sanctionTypeId: sanctionType.id
+                    }
+                })
+            }
         }
 
         revalidatePath('/master/violations')
@@ -238,19 +287,15 @@ export async function updateViolation(violationId: string, data: {
     categoryId: string
     code: string
     name: string
-    description: string
-    maxCount: number
-    period: string
-    points?: number
-    sanctionTypeIds?: string[]
-    isActive?: boolean
+    types?: string[]
+    points?: string
+    sanctions?: string[]
 }) {
     try {
         
         const existing = await prisma.violation.findFirst({
             where: { 
                 code: { equals: data.code, mode: 'insensitive' },
-                isActive: true,
                 NOT: { id: violationId }
             }
         })
@@ -265,27 +310,72 @@ export async function updateViolation(violationId: string, data: {
                 categoryId: data.categoryId,
                 code: data.code,
                 name: data.name,
-                description: data.description,
-                maxCount: data.maxCount,
-                period: data.period,
-                points: data.points || 0,
-                isActive: data.isActive
+                points: data.points || 'SP 1'
             }
         })
 
-if (data.sanctionTypeIds !== undefined) {
+        // Handle violation types update
+        if (data.types !== undefined) {
             
+            // Delete existing types
+            await prisma.violationType.deleteMany({
+                where: { violationId }
+            })
+
+            // Add new types
+            if (data.types.length > 0) {
+                const validTypes = data.types.filter(t => t.trim() !== '')
+                
+                for (const typeDesc of validTypes) {
+                    await prisma.violationType.create({
+                        data: {
+                            violationId,
+                            description: typeDesc.trim()
+                        }
+                    })
+                }
+            }
+        }
+
+        // Handle sanctions update
+        if (data.sanctions !== undefined) {
+            
+            // Delete existing sanction relations
             await prisma.violationSanctionType.deleteMany({
                 where: { violationId }
             })
 
-if (data.sanctionTypeIds.length > 0) {
-                await prisma.violationSanctionType.createMany({
-                    data: data.sanctionTypeIds.map(sanctionTypeId => ({
-                        violationId,
-                        sanctionTypeId
-                    }))
-                })
+            // Add new sanctions
+            if (data.sanctions.length > 0) {
+                const validSanctions = data.sanctions.filter(s => s.trim() !== '')
+                
+                for (const sanctionName of validSanctions) {
+                    // Check if sanctionType exists, if not create it
+                    let sanctionType = await prisma.sanctionType.findFirst({
+                        where: { 
+                            name: { equals: sanctionName.trim(), mode: 'insensitive' }
+                        }
+                    })
+
+                    if (!sanctionType) {
+                        // Create new sanctionType with default values
+                        sanctionType = await prisma.sanctionType.create({
+                            data: {
+                                name: sanctionName.trim(),
+                                level: 'RINGAN', // default level
+                                isActive: true
+                            }
+                        })
+                    }
+
+                    // Link violation with sanctionType
+                    await prisma.violationSanctionType.create({
+                        data: {
+                            violationId,
+                            sanctionTypeId: sanctionType.id
+                        }
+                    })
+                }
             }
         }
 
@@ -316,21 +406,18 @@ export async function deleteViolation(violationId: string) {
         }
 
         if (usage._count.violationCases > 0) {
-            
-            await prisma.violation.update({
-                where: { id: violationId },
-                data: { isActive: false }
-            })
-        } else {
-            
-            await prisma.violationSanctionType.deleteMany({
-                where: { violationId }
-            })
-            
-            await prisma.violation.delete({
-                where: { id: violationId }
-            })
+            throw new Error('Pelanggaran tidak dapat dihapus karena sudah digunakan dalam ' + usage._count.violationCases + ' kasus pelanggaran')
         }
+
+        // Delete related records first (violationTypes will be cascade deleted automatically)
+        await prisma.violationSanctionType.deleteMany({
+            where: { violationId }
+        })
+        
+        // Delete the violation
+        await prisma.violation.delete({
+            where: { id: violationId }
+        })
 
         revalidatePath('/master/violations')
         return { success: true }
@@ -340,7 +427,47 @@ export async function deleteViolation(violationId: string) {
     }
 }
 
-export async function deleteViolationCategory(categoryId: string) {
+export async function updateViolationCategory(categoryId: string, data: {
+    code: string
+    name: string
+    level: string
+    description?: string
+    isActive?: boolean
+}) {
+    try {
+        // Check duplicate code
+        const existing = await prisma.violationCategory.findFirst({
+            where: { 
+                code: { equals: data.code, mode: 'insensitive' },
+                isActive: true,
+                NOT: { id: categoryId }
+            }
+        })
+
+        if (existing) {
+            throw new Error('Kode kategori sudah ada')
+        }
+
+        await prisma.violationCategory.update({
+            where: { id: categoryId },
+            data: {
+                code: data.code,
+                name: data.name,
+                level: data.level as any,
+                description: data.description,
+                isActive: data.isActive
+            }
+        })
+
+        revalidatePath('/master/violations')
+        return { success: true }
+    } catch (error) {
+        console.error('Error updating violation category:', error)
+        throw new Error(error instanceof Error ? error.message : 'Gagal mengupdate kategori pelanggaran')
+    }
+}
+
+export async function deleteViolationCategory(categoryId: string, forceDelete: boolean = false) {
     try {
         
         const usage = await prisma.violationCategory.findUnique({
@@ -358,8 +485,28 @@ export async function deleteViolationCategory(categoryId: string) {
             throw new Error('Kategori tidak ditemukan')
         }
 
-        if (usage._count.violations > 0) {
-            throw new Error('Kategori masih digunakan oleh pelanggaran lain')
+        if (usage._count.violations > 0 && !forceDelete) {
+            throw new Error(`Kategori masih digunakan oleh ${usage._count.violations} pelanggaran. Gunakan force delete untuk menghapus paksa.`)
+        }
+
+        if (forceDelete) {
+            // Delete all violations in this category first
+            const violations = await prisma.violation.findMany({
+                where: { categoryId },
+                select: { id: true }
+            })
+
+            // Delete sanction relations for each violation
+            for (const violation of violations) {
+                await prisma.violationSanctionType.deleteMany({
+                    where: { violationId: violation.id }
+                })
+            }
+
+            // Delete all violations
+            await prisma.violation.deleteMany({
+                where: { categoryId }
+            })
         }
 
         await prisma.violationCategory.delete({
@@ -367,7 +514,7 @@ export async function deleteViolationCategory(categoryId: string) {
         })
 
         revalidatePath('/master/violations')
-        return { success: true }
+        return { success: true, message: 'Kategori berhasil dihapus' }
     } catch (error) {
         console.error('Error deleting violation category:', error)
         throw new Error(error instanceof Error ? error.message : 'Gagal menghapus kategori pelanggaran')
@@ -392,7 +539,8 @@ export async function getViolation(violationId: string) {
                             select: {
                                 id: true,
                                 name: true,
-                                level: true
+                                level: true,
+                                duration: true
                             }
                         }
                     }

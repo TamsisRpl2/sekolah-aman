@@ -205,7 +205,6 @@ export async function getSanction(sanctionId: string) {
                         violation: {
                             select: {
                                 name: true,
-                                description: true,
                                 category: {
                                     select: {
                                         name: true,
@@ -398,5 +397,231 @@ export async function getSanctionsByStudent(studentId: string) {
     } catch (error) {
         console.error('Error fetching sanctions by student:', error)
         throw new Error('Gagal mengambil riwayat sanksi siswa')
+    }
+}
+
+export async function getSanctionsHistoryData(params?: {
+    search?: string
+    status?: 'completed' | 'pending' | ''
+    startDate?: string
+    endDate?: string
+    page?: number
+    limit?: number
+}) {
+    try {
+        const page = params?.page || 1
+        const limit = params?.limit || 10
+        const skip = (page - 1) * limit
+
+        const where: any = {}
+
+        // Search filter
+        if (params?.search) {
+            where.OR = [
+                { 
+                    case: {
+                        student: {
+                            name: { contains: params.search, mode: 'insensitive' }
+                        }
+                    }
+                },
+                { 
+                    case: {
+                        student: {
+                            nis: { contains: params.search, mode: 'insensitive' }
+                        }
+                    }
+                },
+                { 
+                    case: {
+                        caseNumber: { contains: params.search, mode: 'insensitive' }
+                    }
+                },
+                {
+                    actionType: { contains: params.search, mode: 'insensitive' }
+                }
+            ]
+        }
+
+        // Status filter
+        if (params?.status) {
+            if (params.status === 'completed') {
+                where.isCompleted = true
+            } else if (params.status === 'pending') {
+                where.isCompleted = false
+            }
+        }
+
+        // Date range filter
+        if (params?.startDate || params?.endDate) {
+            where.actionDate = {}
+            if (params.startDate) {
+                where.actionDate.gte = new Date(params.startDate)
+            }
+            if (params.endDate) {
+                where.actionDate.lte = new Date(params.endDate)
+            }
+        }
+
+        // Fetch case actions (sanctions history)
+        const [caseActions, total, completedCount, pendingCount] = await Promise.all([
+            prisma.caseAction.findMany({
+                where: {
+                    ...where,
+                    deletedAt: null
+                },
+                skip,
+                take: limit,
+                orderBy: { actionDate: 'desc' },
+                include: {
+                    case: {
+                        select: {
+                            id: true,
+                            caseNumber: true,
+                            classLevel: true,
+                            student: {
+                                select: {
+                                    id: true,
+                                    nis: true,
+                                    name: true,
+                                    photo: true,
+                                    major: true,
+                                    academicYear: true
+                                }
+                            },
+                            violation: {
+                                select: {
+                                    id: true,
+                                    code: true,
+                                    name: true,
+                                    category: {
+                                        select: {
+                                            name: true,
+                                            level: true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    sanctionType: {
+                        select: {
+                            id: true,
+                            name: true,
+                            description: true,
+                            level: true,
+                            duration: true
+                        }
+                    },
+                    actionBy: {
+                        select: {
+                            id: true,
+                            name: true
+                        }
+                    },
+                    editedBy: {
+                        select: {
+                            id: true,
+                            name: true
+                        }
+                    }
+                }
+            }),
+            prisma.caseAction.count({ 
+                where: {
+                    ...where,
+                    deletedAt: null
+                } 
+            }),
+            prisma.caseAction.count({ 
+                where: {
+                    ...where,
+                    deletedAt: null,
+                    isCompleted: true
+                }
+            }),
+            prisma.caseAction.count({ 
+                where: {
+                    ...where,
+                    deletedAt: null,
+                    isCompleted: false
+                }
+            })
+        ])
+
+        // Map to expected format
+        const sanctionsHistory = caseActions.map(action => ({
+            id: action.id,
+            caseId: action.caseId,
+            actionById: action.actionById,
+            sanctionTypeId: action.sanctionTypeId,
+            actionDate: action.actionDate.toISOString(),
+            actionType: action.actionType,
+            description: action.description,
+            evidenceUrls: action.evidenceUrls,
+            followUpDate: action.followUpDate?.toISOString() || null,
+            isCompleted: action.isCompleted,
+            notes: action.notes,
+            editedById: action.editedById,
+            editedAt: action.editedAt?.toISOString() || null,
+            createdAt: action.createdAt.toISOString(),
+            updatedAt: action.updatedAt.toISOString(),
+            case: {
+                id: action.case.id,
+                caseNumber: action.case.caseNumber,
+                classLevel: action.case.classLevel,
+                student: {
+                    id: action.case.student.id,
+                    nis: action.case.student.nis,
+                    name: action.case.student.name,
+                    photo: action.case.student.photo,
+                    major: action.case.student.major,
+                    academicYear: action.case.student.academicYear
+                },
+                violation: {
+                    id: action.case.violation.id,
+                    code: action.case.violation.code,
+                    name: action.case.violation.name,
+                    description: action.case.violation.name,
+                    category: {
+                        name: action.case.violation.category.name,
+                        level: action.case.violation.category.level
+                    }
+                }
+            },
+            sanctionType: action.sanctionType ? {
+                id: action.sanctionType.id,
+                name: action.sanctionType.name,
+                description: action.sanctionType.description,
+                level: action.sanctionType.level,
+                duration: action.sanctionType.duration
+            } : null,
+            actionBy: {
+                id: action.actionBy.id,
+                name: action.actionBy.name
+            },
+            editedBy: action.editedBy ? {
+                id: action.editedBy.id,
+                name: action.editedBy.name
+            } : null
+        }))
+
+        return {
+            sanctionsHistory,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit)
+            },
+            stats: {
+                total,
+                completed: completedCount,
+                pending: pendingCount
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching sanctions history data:', error)
+        throw new Error('Gagal mengambil data riwayat sanksi')
     }
 }

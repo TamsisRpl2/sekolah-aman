@@ -1,317 +1,547 @@
 'use client'
 
-import { useState } from 'react'
-import { useParams } from 'next/navigation'
-import { useCase } from '@/lib/hooks/useCases'
-import { CaseAction, CaseActionWithSanction } from '@/types/cases'
-import { IoCheckmarkCircle, IoTime, IoCalendar, IoDocument, IoPerson, IoImage, IoLink, IoWarning, IoCreate, IoTrash, IoEllipsisVertical } from 'react-icons/io5'
-import { useSession } from 'next-auth/react'
-import EditActionForm from './edit-action-form'
+import { useState, useTransition, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import Image from 'next/image'
+import { IoCheckmarkCircle, IoTimeOutline, IoCalendarOutline, IoPerson, IoDocumentText, IoTrash, IoCreate, IoEllipsisVertical, IoImage, IoCloudDownload, IoAlertCircle, IoClose, IoCheckmark, IoCloudUpload } from 'react-icons/io5'
+import { deleteCaseAction, updateCaseAction, getSanctionTypesForViolation } from '../actions'
+import dynamic from 'next/dynamic'
 
-const getActionTypeLabel = (action: CaseActionWithSanction) => {
-    if (action.sanctionType?.name) {
-        return action.sanctionType.name
-    }
-    
-    const types = {
-        'TEGURAN_LISAN': 'Teguran Lisan',
-        'TEGURAN_TERTULIS': 'Teguran Tertulis',
-        'PERINGATAN': 'Surat Peringatan',
-        'PANGGIL_ORTU': 'Panggil Orang Tua',
-        'SKORSING': 'Skorsing',
-        'PEMBINAAN': 'Pembinaan Khusus',
-        'KONSELING': 'Konseling',
-        'LAINNYA': 'Lainnya'
-    }
-    return types[action.actionType as keyof typeof types] || action.actionType
+const MultiFileUpload = dynamic(() => import('@/components/multi-file-upload'))
+
+interface SanctionType {
+    id: string
+    name: string
+    level: string
 }
 
-const getActionIcon = (action: CaseActionWithSanction, isCompleted: boolean) => {
-    if (isCompleted) {
-        return <IoCheckmarkCircle className="w-5 h-5 text-green-600" />
-    }
+interface ActionBy {
+    name: string
+}
+
+interface EditedBy {
+    name: string
+}
+
+interface CaseAction {
+    id: string
+    actionType: string
+    description: string
+    actionDate: Date
+    followUpDate: Date | null
+    isCompleted: boolean
+    notes: string | null
+    evidenceUrls: string[]
+    createdAt: Date
+    editedAt: Date | null
+    sanctionType: SanctionType | null
+    sanctionTypeId: string | null
+    actionBy: ActionBy
+    editedBy: EditedBy | null
+}
+
+interface TimelineProps {
+    caseId: string
+    actions: CaseAction[]
+    violationId: string
+}
+
+const Timeline = ({ caseId, actions, violationId }: TimelineProps) => {
+    const router = useRouter()
+    const [isPending, startTransition] = useTransition()
+    const [deletingId, setDeletingId] = useState<string | null>(null)
+    const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+    const [editingAction, setEditingAction] = useState<CaseAction | null>(null)
+    const [sanctionTypes, setSanctionTypes] = useState<SanctionType[]>([])
+    const [isSubmitting, setIsSubmitting] = useState(false)
+    const [successMessage, setSuccessMessage] = useState('')
     
-    if (action.sanctionType?.level) {
-        switch (action.sanctionType.level) {
-            case 'RINGAN':
-                return <IoDocument className="w-5 h-5 text-yellow-600" />
-            case 'SEDANG':
-                return <IoWarning className="w-5 h-5 text-orange-600" />
-            case 'BERAT':
-                return <IoTime className="w-5 h-5 text-red-600" />
+    const [editFormData, setEditFormData] = useState({
+        sanctionTypeId: '',
+        description: '',
+        followUpDate: '',
+        notes: '',
+        evidenceUrls: [] as string[],
+        isCompleted: false
+    })
+
+    useEffect(() => {
+        if (editingAction) {
+            setEditFormData({
+                sanctionTypeId: editingAction.sanctionTypeId || '',
+                description: editingAction.description,
+                followUpDate: editingAction.followUpDate 
+                    ? new Date(editingAction.followUpDate).toISOString().split('T')[0]
+                    : '',
+                notes: editingAction.notes || '',
+                evidenceUrls: editingAction.evidenceUrls || [],
+                isCompleted: editingAction.isCompleted
+            })
+
+            startTransition(async () => {
+                try {
+                    const types = await getSanctionTypesForViolation(violationId)
+                    setSanctionTypes(types)
+                } catch (error) {
+                    console.error('Error loading sanction types:', error)
+                }
+            })
         }
-    }
-    
-    switch (action.actionType) {
-        case 'TEGURAN_LISAN':
-        case 'TEGURAN_TERTULIS':
-        case 'PERINGATAN':
-            return <IoDocument className="w-5 h-5 text-orange-600" />
-        case 'PANGGIL_ORTU':
-            return <IoPerson className="w-5 h-5 text-blue-600" />
-        case 'SKORSING':
-        case 'PEMBINAAN':
-            return <IoTime className="w-5 h-5 text-red-600" />
-        case 'KONSELING':
-            return <IoCalendar className="w-5 h-5 text-purple-600" />
-        default:
-            return <IoDocument className="w-5 h-5 text-gray-600" />
-    }
-}
+    }, [editingAction, violationId])
 
-const getLevelBadge = (level: string) => {
-    switch (level) {
-        case 'RINGAN':
-            return <span className="badge badge-warning badge-sm">Ringan</span>
-        case 'SEDANG':
-            return <span className="badge badge-info badge-sm">Sedang</span>
-        case 'BERAT':
-            return <span className="badge badge-error badge-sm">Berat</span>
-        default:
-            return null
-    }
-}
-
-const Timeline = () => {
-    const params = useParams()
-    const id = params.id as string
-    const { data: session } = useSession()
-    const { caseData, loading, error, refetch } = useCase(id)
-    const [deletingActionId, setDeletingActionId] = useState<string | null>(null)
-    const [editingActionId, setEditingActionId] = useState<string | null>(null)
-
-    const handleEditAction = (actionId: string) => {
-        setEditingActionId(actionId)
+    const handleEdit = (action: CaseAction) => {
+        setEditingAction(action)
+        setOpenMenuId(null)
     }
 
-    const handleCancelEdit = () => {
-        setEditingActionId(null)
+    const handleCloseModal = () => {
+        setEditingAction(null)
+        setEditFormData({
+            sanctionTypeId: '',
+            description: '',
+            followUpDate: '',
+            notes: '',
+            evidenceUrls: [],
+            isCompleted: false
+        })
+        setSuccessMessage('')
     }
 
-    const handleSaveEdit = () => {
-        setEditingActionId(null)
-        refetch() // Refresh timeline data
+    const handleEditSubmit = async (e: React.FormEvent) => {
+        e.preventDefault()
+        
+        if (!editingAction || !editFormData.sanctionTypeId || !editFormData.description) {
+            alert('Jenis sanksi dan deskripsi wajib diisi')
+            return
+        }
+
+        setIsSubmitting(true)
+        startTransition(async () => {
+            try {
+                await updateCaseAction(editingAction.id, {
+                    sanctionTypeId: editFormData.sanctionTypeId,
+                    description: editFormData.description,
+                    followUpDate: editFormData.followUpDate || undefined,
+                    notes: editFormData.notes || undefined,
+                    evidenceUrls: editFormData.evidenceUrls,
+                    isCompleted: editFormData.isCompleted
+                })
+
+                setSuccessMessage('Tindakan berhasil diperbarui!')
+                setTimeout(() => {
+                    handleCloseModal()
+                    router.refresh()
+                }, 1500)
+            } catch (error) {
+                alert(error instanceof Error ? error.message : 'Gagal memperbarui tindakan')
+            } finally {
+                setIsSubmitting(false)
+            }
+        })
     }
 
-    const handleDeleteAction = async (actionId: string) => {
+    const handleDelete = async (actionId: string) => {
         if (!confirm('Apakah Anda yakin ingin menghapus tindakan ini?')) {
             return
         }
 
-        setDeletingActionId(actionId)
-        try {
-            const response = await fetch(`/api/cases/${id}/actions/${actionId}`, {
-                method: 'DELETE',
-            })
-
-            if (response.ok) {
-                alert('Tindakan berhasil dihapus')
-                refetch() // Refresh case data
-            } else {
-                const error = await response.json()
-                alert(error.error || 'Gagal menghapus tindakan')
+        setDeletingId(actionId)
+        startTransition(async () => {
+            try {
+                await deleteCaseAction(actionId)
+                router.refresh()
+            } catch (error) {
+                alert(error instanceof Error ? error.message : 'Gagal menghapus tindakan')
+            } finally {
+                setDeletingId(null)
             }
-        } catch (error) {
-            console.error('Error deleting action:', error)
-            alert('Terjadi kesalahan saat menghapus tindakan')
-        } finally {
-            setDeletingActionId(null)
+        })
+    }
+
+    const getLevelBadge = (level: string) => {
+        const badges = {
+            'RINGAN': 'bg-yellow-100 text-yellow-800 border-yellow-200',
+            'SEDANG': 'bg-orange-100 text-orange-800 border-orange-200',
+            'BERAT': 'bg-red-100 text-red-800 border-red-200'
         }
+        return badges[level as keyof typeof badges] || 'bg-gray-100 text-gray-800 border-gray-200'
     }
 
-    const canEditAction = (action: CaseActionWithSanction) => {
-        if (!session?.user?.id) return false
-        
-        if (session.user.role === 'ADMIN') return true
-        
-        return action.actionBy?.id === session.user.id || action.createdBy?.id === session.user.id
+    const formatDate = (date: Date) => {
+        return new Date(date).toLocaleDateString('id-ID', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        })
     }
 
-    if (loading) {
+    const formatTime = (date: Date) => {
+        return new Date(date).toLocaleTimeString('id-ID', {
+            hour: '2-digit',
+            minute: '2-digit'
+        })
+    }
+
+    if (!actions || actions.length === 0) {
         return (
-            <div className="flex justify-center items-center h-32">
-                <span className="loading loading-spinner loading-lg"></span>
-            </div>
-        )
-    }
-
-    if (error) {
-        return (
-            <div className="alert alert-error">
-                <span>Error: {error}</span>
-            </div>
-        )
-    }
-
-    if (editingActionId) {
-        return (
-            <EditActionForm
-                actionId={editingActionId}
-                onSave={handleSaveEdit}
-                onCancel={handleCancelEdit}
-            />
-        )
-    }
-
-    if (!caseData || !caseData.actions || caseData.actions.length === 0) {
-        return (
-            <div className="text-center py-8">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <IoDocument className="w-8 h-8 text-gray-400" />
+            <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-200">
+                <div className="text-center">
+                    <div className="inline-flex items-center justify-center w-16 h-16 bg-slate-100 rounded-full mb-4">
+                        <IoAlertCircle className="w-8 h-8 text-slate-400" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-slate-800 mb-2">Belum Ada Tindakan</h3>
+                    <p className="text-slate-600 text-sm">
+                        Belum ada tindakan yang dicatat untuk kasus ini. Silakan tambahkan tindakan pertama menggunakan form di sebelah kiri.
+                    </p>
                 </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Belum Ada Tindakan</h3>
-                <p className="text-gray-600">Tindakan yang dilakukan untuk kasus ini akan ditampilkan di sini.</p>
             </div>
         )
     }
-
-    const sortedActions = [...caseData.actions]
-        .filter(action => !action.deletedAt)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
     return (
-        <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Timeline Tindakan</h3>
-            
-            <ul className="timeline timeline-snap-icon max-md:timeline-compact timeline-vertical">
-                {sortedActions.map((action: CaseActionWithSanction, index) => (
-                    <li key={action.id}>
-                        {index > 0 && <hr />}
-                        <div className="timeline-middle">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                                action.isCompleted ? 'bg-green-100' : 'bg-gray-100'
-                            }`}>
-                                {getActionIcon(action, action.isCompleted)}
-                            </div>
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-6 text-white">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-white/20 rounded-lg">
+                            <IoTimeOutline className="w-6 h-6" />
                         </div>
-                        <div className={`${index % 2 === 0 ? 'timeline-start md:text-end' : 'timeline-end'} mb-10`}>
-                            <div className="flex items-center justify-between mb-2">
-                                <time className="font-mono italic text-sm text-gray-500">
-                                    {new Date(action.createdAt).toLocaleDateString('id-ID', {
-                                        day: 'numeric',
-                                        month: 'long',
-                                        year: 'numeric',
-                                        hour: '2-digit',
-                                        minute: '2-digit'
-                                    })}
-                                </time>
-                                
-                                {canEditAction(action) && (
-                                    <div className="dropdown dropdown-end">
-                                        <div tabIndex={0} role="button" className="btn btn-ghost btn-xs">
-                                            <IoEllipsisVertical className="w-4 h-4" />
+                        <div>
+                            <h2 className="text-xl font-bold">Timeline Tindakan</h2>
+                            <p className="text-blue-100 text-sm mt-1">{actions.length} tindakan tercatat</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Timeline List */}
+            <div className="p-6">
+                <div className="space-y-4">
+                    {actions.map((action, index) => (
+                        <div 
+                            key={action.id}
+                            className="group relative bg-gradient-to-br from-slate-50 to-white border-2 border-slate-200 rounded-2xl p-5 hover:shadow-md transition-all duration-300 hover:border-blue-300"
+                        >
+                            {/* Timeline Connector */}
+                            {index < actions.length - 1 && (
+                                <div className="absolute left-[30px] top-[60px] bottom-[-16px] w-0.5 bg-gradient-to-b from-slate-300 to-transparent" />
+                            )}
+
+                            {/* Action Header */}
+                            <div className="flex items-start justify-between gap-4 mb-4">
+                                <div className="flex items-start gap-4 flex-1">
+                                    {/* Icon */}
+                                    <div className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${
+                                        action.isCompleted 
+                                            ? 'bg-green-100 border-2 border-green-300' 
+                                            : 'bg-blue-100 border-2 border-blue-300'
+                                    }`}>
+                                        {action.isCompleted ? (
+                                            <IoCheckmarkCircle className="w-6 h-6 text-green-600" />
+                                        ) : (
+                                            <IoDocumentText className="w-6 h-6 text-blue-600" />
+                                        )}
+                                    </div>
+
+                                    {/* Info */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-start gap-2 flex-wrap mb-2">
+                                            <h3 className="font-semibold text-slate-800 text-lg">
+                                                {action.sanctionType?.name || 'Tindakan'}
+                                            </h3>
+                                            {action.sanctionType?.level && (
+                                                <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full border ${getLevelBadge(action.sanctionType.level)}`}>
+                                                    {action.sanctionType.level}
+                                                </span>
+                                            )}
+                                            {action.isCompleted && (
+                                                <span className="px-2.5 py-0.5 text-xs font-medium bg-green-100 text-green-800 border border-green-200 rounded-full">
+                                                    Selesai
+                                                </span>
+                                            )}
                                         </div>
-                                        <ul tabIndex={0} className="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow">
-                                            <li>
-                                                <button 
-                                                    onClick={() => handleEditAction(action.id)}
-                                                    className="text-blue-600 hover:text-blue-800"
-                                                >
-                                                    <IoCreate className="w-4 h-4" />
-                                                    Edit Tindakan
-                                                </button>
-                                            </li>
-                                            <li>
-                                                <button 
-                                                    onClick={() => handleDeleteAction(action.id)}
-                                                    className="text-red-600 hover:text-red-800"
-                                                    disabled={deletingActionId === action.id}
-                                                >
-                                                    {deletingActionId === action.id ? (
-                                                        <span className="loading loading-spinner loading-xs"></span>
-                                                    ) : (
+
+                                        <div className="flex items-center gap-4 text-sm text-slate-600 mb-3">
+                                            <div className="flex items-center gap-1.5">
+                                                <IoPerson className="w-4 h-4" />
+                                                <span>{action.actionBy.name}</span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5">
+                                                <IoCalendarOutline className="w-4 h-4" />
+                                                <span>{formatDate(action.createdAt)}</span>
+                                            </div>
+                                            <div className="text-slate-500">
+                                                {formatTime(action.createdAt)}
+                                            </div>
+                                        </div>
+
+                                        <p className="text-slate-700 leading-relaxed mb-3">
+                                            {action.description}
+                                        </p>
+
+                                        {/* Follow-up Date */}
+                                        {action.followUpDate && (
+                                            <div className="inline-flex items-center gap-2 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 mb-3">
+                                                <IoCalendarOutline className="w-4 h-4" />
+                                                <span className="font-medium">Follow-up:</span>
+                                                <span>{formatDate(action.followUpDate)}</span>
+                                            </div>
+                                        )}
+
+                                        {/* Evidence */}
+                                        {action.evidenceUrls && action.evidenceUrls.length > 0 && (
+                                            <div className="mb-3">
+                                                <div className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-2">
+                                                    <IoImage className="w-4 h-4" />
+                                                    <span>Bukti Tindakan ({action.evidenceUrls.length})</span>
+                                                </div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {action.evidenceUrls.map((url, idx) => (
+                                                        <a
+                                                            key={idx}
+                                                            href={url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="group/img relative w-20 h-20 rounded-lg overflow-hidden border-2 border-slate-200 hover:border-blue-400 transition-all"
+                                                        >
+                                                            <Image 
+                                                                src={url} 
+                                                                alt={`Evidence ${idx + 1}`}
+                                                                fill
+                                                                sizes="80px"
+                                                                className="object-cover group-hover/img:scale-110 transition-transform duration-300"
+                                                            />
+                                                            <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/40 transition-colors flex items-center justify-center">
+                                                                <IoCloudDownload className="w-6 h-6 text-white opacity-0 group-hover/img:opacity-100 transition-opacity" />
+                                                            </div>
+                                                        </a>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Notes */}
+                                        {action.notes && (
+                                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
+                                                <p className="font-medium mb-1">Catatan:</p>
+                                                <p>{action.notes}</p>
+                                            </div>
+                                        )}
+
+                                        {/* Edited Info */}
+                                        {action.editedAt && action.editedBy && (
+                                            <div className="text-xs text-slate-500 mt-3 flex items-center gap-1.5">
+                                                <IoCreate className="w-3 h-3" />
+                                                <span>Diedit oleh {action.editedBy.name} pada {formatDate(action.editedAt)}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Action Menu */}
+                                <div className="relative flex-shrink-0">
+                                    <button
+                                        onClick={() => setOpenMenuId(openMenuId === action.id ? null : action.id)}
+                                        className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                                    >
+                                        <IoEllipsisVertical className="w-5 h-5 text-slate-600" />
+                                    </button>
+
+                                    {openMenuId === action.id && (
+                                        <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-200 py-2 z-10">
+                                            <button
+                                                onClick={() => handleEdit(action)}
+                                                className="w-full px-4 py-2 text-left text-sm text-blue-600 hover:bg-blue-50 transition-colors flex items-center gap-2"
+                                            >
+                                                <IoCreate className="w-4 h-4" />
+                                                <span>Edit Tindakan</span>
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(action.id)}
+                                                disabled={deletingId === action.id || isPending}
+                                                className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2 disabled:opacity-50"
+                                            >
+                                                {deletingId === action.id ? (
+                                                    <>
+                                                        <div className="w-4 h-4 border-2 border-red-600/30 border-t-red-600 rounded-full animate-spin" />
+                                                        <span>Menghapus...</span>
+                                                    </>
+                                                ) : (
+                                                    <>
                                                         <IoTrash className="w-4 h-4" />
-                                                    )}
-                                                    Hapus Tindakan
-                                                </button>
-                                            </li>
-                                        </ul>
-                                    </div>
-                                )}
-                            </div>
-                            <div className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                                {getActionTypeLabel(action)}
-                                {action.isCompleted && (
-                                    <span className="badge badge-success badge-sm text-white">Selesai</span>
-                                )}
-                                {action.sanctionType?.level && getLevelBadge(action.sanctionType.level)}
-                            </div>
-                            
-                            {action.sanctionType?.description && (
-                                <p className="text-sm text-gray-600 mt-1">{action.sanctionType.description}</p>
-                            )}
-                            
-                            {action.sanctionType?.duration && (
-                                <p className="text-sm text-orange-600 mt-1">
-                                    <IoTime className="w-4 h-4 inline mr-1" />
-                                    Durasi: {action.sanctionType.duration} hari
-                                </p>
-                            )}
-                            
-                            <p className="text-gray-700 mt-1">{action.description}</p>
-                            
-                            {action.followUpDate && (
-                                <div className="mt-2 text-sm text-blue-600">
-                                    <IoCalendar className="w-4 h-4 inline mr-1" />
-                                    Follow-up: {new Date(action.followUpDate).toLocaleDateString('id-ID')}
+                                                        <span>Hapus Tindakan</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-                            
-                            {action.notes && (
-                                <div className="mt-2 text-sm text-gray-600">
-                                    <strong>Catatan:</strong> {action.notes}
-                                </div>
-                            )}
-                            
-                            {action.evidenceUrls && action.evidenceUrls.length > 0 && (
-                                <div className="mt-3">
-                                    <div className="text-sm font-medium text-gray-700 mb-2">Bukti Tindakan:</div>
-                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                        {action.evidenceUrls.map((url, idx) => {
-                                            const isImage = url.includes('image') || /\.(jpg|jpeg|png|gif|webp)$/i.test(url)
-                                            return (
-                                                <a
-                                                    key={idx}
-                                                    href={url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="flex items-center gap-2 p-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm transition-colors"
-                                                >
-                                                    {isImage ? (
-                                                        <IoImage className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                                                    ) : (
-                                                        <IoDocument className="w-4 h-4 text-red-500 flex-shrink-0" />
-                                                    )}
-                                                    <span className="truncate text-gray-700">
-                                                        {isImage ? 'Gambar' : 'Dokumen'} {idx + 1}
-                                                    </span>
-                                                    <IoLink className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                                                </a>
-                                            )
-                                        })}
-                                    </div>
-                                </div>
-                            )}
-                            
-                            <div className="mt-2 text-xs text-gray-500">
-                                <div>Ditambahkan oleh: {action.actionBy?.name || 'Unknown'}</div>
-                                {action.editedBy && action.editedAt && (
-                                    <div className="text-orange-600 mt-1">
-                                        Diedit oleh: {action.editedBy.name} pada {new Date(action.editedAt).toLocaleDateString('id-ID', {
-                                            day: 'numeric',
-                                            month: 'short',
-                                            year: 'numeric',
-                                            hour: '2-digit',
-                                            minute: '2-digit'
-                                        })}
-                                    </div>
-                                )}
                             </div>
                         </div>
-                        {index < sortedActions.length - 1 && <hr />}
-                    </li>
-                ))}
-            </ul>
+                    ))}
+                </div>
+            </div>
+
+            {editingAction && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                        <div className="sticky top-0 bg-gradient-to-r from-blue-500 to-blue-600 text-white p-6 rounded-t-2xl flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-white/20 rounded-lg">
+                                    <IoCreate className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-bold">Edit Tindakan</h2>
+                                    <p className="text-blue-100 text-sm mt-1">Perbarui informasi tindakan kasus</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={handleCloseModal}
+                                className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                            >
+                                <IoClose className="w-6 h-6" />
+                            </button>
+                        </div>
+
+                        {successMessage && (
+                            <div className="mx-6 mt-6 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-3">
+                                <IoCheckmark className="w-5 h-5 text-green-600 flex-shrink-0" />
+                                <p className="text-green-800 font-medium">{successMessage}</p>
+                            </div>
+                        )}
+
+                        <form onSubmit={handleEditSubmit} className="p-6 space-y-5">
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                    <IoDocumentText className="w-4 h-4" />
+                                    Jenis Sanksi
+                                </label>
+                                <select
+                                    value={editFormData.sanctionTypeId}
+                                    onChange={(e) => setEditFormData({ ...editFormData, sanctionTypeId: e.target.value })}
+                                    required
+                                    disabled={isSubmitting}
+                                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                >
+                                    <option value="">Pilih Jenis Sanksi</option>
+                                    {sanctionTypes.map((type) => (
+                                        <option key={type.id} value={type.id}>
+                                            {type.name} - {type.level}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                    <IoDocumentText className="w-4 h-4" />
+                                    Deskripsi Tindakan
+                                </label>
+                                <textarea
+                                    value={editFormData.description}
+                                    onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                                    required
+                                    disabled={isSubmitting}
+                                    rows={4}
+                                    placeholder="Jelaskan tindakan yang diambil..."
+                                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all resize-none disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                    <IoCheckmarkCircle className="w-4 h-4" />
+                                    Status Tindakan
+                                </label>
+                                <select
+                                    value={editFormData.isCompleted ? 'selesai' : 'proses'}
+                                    onChange={(e) => setEditFormData({ ...editFormData, isCompleted: e.target.value === 'selesai' })}
+                                    required
+                                    disabled={isSubmitting}
+                                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                >
+                                    <option value="proses">Dalam Proses</option>
+                                    <option value="selesai">Selesai</option>
+                                </select>
+                                <p className="text-xs text-slate-500">
+                                    {editFormData.isCompleted 
+                                        ? '⚠️ Tindakan akan ditandai selesai. Tidak dapat menambah tindakan baru setelah ini.' 
+                                        : 'Tindakan masih dalam proses. Anda dapat menambah tindakan lanjutan.'}
+                                </p>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                    <IoCalendarOutline className="w-4 h-4" />
+                                    Tanggal Follow-up <span className="text-slate-400 font-normal">(Opsional)</span>
+                                </label>
+                                <input
+                                    type="date"
+                                    value={editFormData.followUpDate}
+                                    onChange={(e) => setEditFormData({ ...editFormData, followUpDate: e.target.value })}
+                                    disabled={isSubmitting}
+                                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                    <IoDocumentText className="w-4 h-4" />
+                                    Catatan <span className="text-slate-400 font-normal">(Opsional)</span>
+                                </label>
+                                <textarea
+                                    value={editFormData.notes}
+                                    onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })}
+                                    disabled={isSubmitting}
+                                    rows={3}
+                                    placeholder="Tambahkan catatan tambahan..."
+                                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all resize-none disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                    <IoCloudUpload className="w-4 h-4" />
+                                    Bukti Tindakan <span className="text-slate-400 font-normal">(Opsional)</span>
+                                </label>
+                                <MultiFileUpload
+                                    label=""
+                                    placeholder="Upload foto atau dokumen bukti tindakan"
+                                    value={editFormData.evidenceUrls}
+                                    onChange={(urls) => setEditFormData({ ...editFormData, evidenceUrls: urls })}
+                                />
+                            </div>
+
+                            <div className="flex gap-3 pt-4 border-t border-slate-200">
+                                <button
+                                    type="button"
+                                    onClick={handleCloseModal}
+                                    disabled={isSubmitting}
+                                    className="flex-1 px-6 py-3 bg-slate-100 text-slate-700 font-semibold rounded-xl hover:bg-slate-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={isSubmitting}
+                                    className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-semibold rounded-xl hover:shadow-lg hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                                >
+                                    {isSubmitting ? (
+                                        <span className="flex items-center justify-center gap-2">
+                                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            Menyimpan...
+                                        </span>
+                                    ) : (
+                                        'Simpan Perubahan'
+                                    )}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

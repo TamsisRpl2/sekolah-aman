@@ -29,16 +29,29 @@ export async function getStudentsForCase() {
 export async function getViolationsForCase() {
     try {
         const violations = await prisma.violation.findMany({
-            where: { isActive: true },
             include: {
                 category: {
                     select: {
+                        id: true,
                         name: true,
-                        level: true
+                        level: true,
+                        code: true
+                    }
+                },
+                violationTypes: {
+                    select: {
+                        id: true,
+                        description: true
+                    },
+                    orderBy: {
+                        description: 'asc'
                     }
                 }
             },
-            orderBy: { name: 'asc' }
+            orderBy: [
+                { category: { code: 'asc' } },
+                { code: 'asc' }
+            ]
         })
 
         return violations
@@ -51,6 +64,7 @@ export async function getViolationsForCase() {
 export async function createCase(data: {
     studentId: string
     violationId: string
+    violationTypeId?: string
     violationDate: string
     classLevel: string
     description: string
@@ -81,6 +95,7 @@ const now = new Date()
                 caseNumber,
                 studentId: data.studentId,
                 violationId: data.violationId,
+                violationTypeId: data.violationTypeId,
                 inputById: session.user.id,
                 violationDate: new Date(data.violationDate),
                 classLevel: data.classLevel,
@@ -103,6 +118,7 @@ const now = new Date()
 export async function createCaseAndRedirect(data: {
     studentId: string
     violationId: string
+    violationTypeId?: string
     violationDate: string
     classLevel: string
     description: string

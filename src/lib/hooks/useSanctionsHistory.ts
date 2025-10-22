@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { SanctionHistoryItem, SanctionHistoryFilters, SanctionHistoryStats, SanctionHistoryResponse } from '@/types/sanctions-history'
+import { getSanctionsHistoryData } from '@/app/(main)/sanctions-history/actions'
 
 export const useSanctionsHistory = (filters: SanctionHistoryFilters = {}) => {
   const [sanctionsHistory, setSanctionsHistory] = useState<SanctionHistoryItem[]>([])
@@ -22,22 +23,15 @@ export const useSanctionsHistory = (filters: SanctionHistoryFilters = {}) => {
       setLoading(true)
       setError(null)
 
-      const searchParams = new URLSearchParams()
+      const data = await getSanctionsHistoryData({
+        search: filters.search,
+        status: filters.status,
+        startDate: filters.startDate,
+        endDate: filters.endDate,
+        page: filters.page,
+        limit: filters.limit
+      })
       
-      if (filters.search) searchParams.append('search', filters.search)
-      if (filters.status) searchParams.append('status', filters.status)
-      if (filters.startDate) searchParams.append('startDate', filters.startDate)
-      if (filters.endDate) searchParams.append('endDate', filters.endDate)
-      if (filters.page) searchParams.append('page', filters.page.toString())
-      if (filters.limit) searchParams.append('limit', filters.limit.toString())
-
-      const response = await fetch(`/api/sanctions-history?${searchParams.toString()}`)
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch sanctions history')
-      }
-
-      const data: SanctionHistoryResponse = await response.json()
       setSanctionsHistory(data.sanctionsHistory)
       setPagination(data.pagination)
       setStats(data.stats)

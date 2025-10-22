@@ -18,6 +18,7 @@ export async function createStudent(data: {
     parentPhone?: string
     major?: string
     academicYear: string
+    photo?: string
 }) {
     try {
         const session = await getServerSession(authOptions)
@@ -48,6 +49,7 @@ export async function createStudent(data: {
         if (data.parentName) createData.parentName = data.parentName
         if (data.parentPhone) createData.parentPhone = data.parentPhone
         if (data.major) createData.major = data.major
+        if (data.photo) createData.photo = data.photo
 
         const newStudent = await prisma.student.create({
             data: createData
@@ -75,7 +77,8 @@ export async function createStudentAndRedirect(formData: FormData) {
             parentName: String(formData.get('parentName') || '') || undefined,
             parentPhone: String(formData.get('parentPhone') || '') || undefined,
             major: String(formData.get('major') || '') || undefined,
-            academicYear: String(formData.get('academicYear') || '')
+            academicYear: String(formData.get('academicYear') || ''),
+            photo: String(formData.get('photo') || '') || undefined
         }
 
         if (!data.name.trim()) {

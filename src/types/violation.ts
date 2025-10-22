@@ -30,20 +30,25 @@ export interface ViolationSanctionType {
   createdAt: Date
 }
 
+export interface ViolationType {
+  id: string
+  violationId: string
+  description: string
+  createdAt: Date
+  updatedAt: Date
+}
+
 export interface Violation {
   id: string
   categoryId: string
   code: string
   name: string
-  description: string
-  maxCount: number
-  period: string
-  points: number
-  isActive: boolean
+  points: string
   createdAt: Date
   updatedAt: Date
   category?: ViolationCategory
   sanctionTypes?: ViolationSanctionType[]
+  violationTypes?: ViolationType[]
   violationCases?: ViolationCase[]
 }
 
@@ -64,13 +69,9 @@ export interface ViolationFormData {
   categoryId: string
   code: string
   name: string
-  description: string
-  sanctionTypeIds?: string[]
+  types?: string[]
   sanctions?: string[]
-  maxCount: number
-  period: string
-  points: number
-  isActive: boolean
+  points?: string
 }
 
 export interface ViolationCategoryFormData {

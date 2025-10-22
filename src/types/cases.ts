@@ -133,6 +133,7 @@ export interface CaseStats {
 export interface CaseFormData {
   studentId: string
   violationId: string
+  violationTypeId?: string
   violationDate: string
   classLevel: string
   description: string

@@ -46,7 +46,7 @@ const Hero = () => {
     }
 
     return (
-        <div className="hero min-h-[80vh] bg-gradient-to-br from-primary/10 to-secondary/10 relative overflow-hidden">
+        <div className="hero min-h-[80vh] bg-gradient-to-br from-primary/10 to-secondary/10 relative overflow-hidden pt-20">
             <motion.div
                 className="absolute top-20 left-10 w-32 h-32 bg-primary/10 rounded-full blur-xl"
                 animate={{
@@ -148,7 +148,7 @@ const Hero = () => {
                         className="flex flex-col sm:flex-row gap-4 justify-center"
                         variants={itemVariants}
                     >
-                        <motion.button 
+                        {/* <motion.button 
                             className="btn btn-primary btn-lg rounded-lg text-white"
                             variants={buttonVariants}
                             whileHover="hover"
@@ -165,7 +165,7 @@ const Hero = () => {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path>
                             </motion.svg>
                             Mulai Sekarang
-                        </motion.button>
+                        </motion.button> */}
                     </motion.div>
                 </div>
             </motion.div>

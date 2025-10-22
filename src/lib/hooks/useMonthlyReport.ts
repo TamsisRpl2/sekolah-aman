@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { MonthlyReportResponse, MonthlyReportFilters } from '@/types/monthly-report'
+import { getMonthlyReportStats } from '@/app/(main)/reports/monthly/actions'
 
 export const useMonthlyReport = (filters: MonthlyReportFilters) => {
   const [reportData, setReportData] = useState<MonthlyReportResponse | null>(null)
@@ -11,18 +12,11 @@ export const useMonthlyReport = (filters: MonthlyReportFilters) => {
       setLoading(true)
       setError(null)
 
-      const queryParams = new URLSearchParams({
-        month: filters.month.toString(),
-        year: filters.year.toString()
+      const data = await getMonthlyReportStats({
+        month: filters.month + 1, // Convert 0-based to 1-based month
+        year: filters.year
       })
-
-      const response = await fetch(`/api/reports/monthly?${queryParams}`)
       
-      if (!response.ok) {
-        throw new Error('Failed to fetch monthly report data')
-      }
-
-      const data = await response.json()
       setReportData(data)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error occurred')

@@ -121,17 +121,38 @@ model Student {
   phone        String?
   parentPhone  String?
   parentName   String?
-  major        String? // RPL, TKJ, MM, etc
-  academicYear String // 2024/2025
+  major        String?
+  academicYear String
   photo        String?
   isActive     Boolean   @default(true)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  // Relasi
   violationCases ViolationCase[]
+  beritaAcara    BeritaAcara[]
 
   @@map("students")
+}
+
+// ========================================
+// BERITA ACARA
+// ========================================
+
+model BeritaAcara {
+  id           String    @id @default(cuid())
+  studentId    String
+  kronologi    String    @db.Text
+  tanggal      DateTime
+  pelapor      String?
+  saksi        String?
+  tindakLanjut String?   @db.Text
+  status       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@map("berita_acara")
 }
 
 // ========================================
@@ -159,11 +180,7 @@ model Violation {
   categoryId  String
   code        String   @unique // 1.A, 1.B, 2.A, 3.A
   name        String // Keterlambatan & Kehadiran
-  description String // Deskripsi detail pelanggaran
-  maxCount    Int // Maksimal pelanggaran per periode
-  period      String // semester, bulan, tahun
-  points      Int      @default(0) // Point pelanggaran untuk scoring
-  isActive    Boolean  @default(true)
+  points      String   @default("SP 1") // SP 1, SP 2, atau SP 3
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -171,8 +188,23 @@ model Violation {
   category         ViolationCategory       @relation(fields: [categoryId], references: [id])
   violationCases   ViolationCase[]
   sanctionTypes    ViolationSanctionType[] // Many-to-many relation
+  violationTypes   ViolationType[] // Tipe-tipe pelanggaran
 
   @@map("violations")
+}
+
+// Tabel baru untuk menyimpan banyak tipe pelanggaran
+model ViolationType {
+  id          String   @id @default(cuid())
+  violationId String
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  violation      Violation       @relation(fields: [violationId], references: [id], onDelete: Cascade)
+  violationCases ViolationCase[]
+
+  @@map("violation_types")
 }
 
 // Junction table for Violation-SanctionType many-to-many relationship
@@ -195,13 +227,14 @@ model ViolationSanctionType {
 // ========================================
 
 model ViolationCase {
-  id            String     @id @default(cuid())
-  caseNumber    String     @unique // Auto-generated: VC-2025-001
-  studentId     String
-  violationId   String
-  inputById     String // User yang input (GURU/ADMIN)
-  violationDate DateTime
-  classLevel    String // Kelas saat terjadi pelanggaran (X, XI, XII)
+  id               String     @id @default(cuid())
+  caseNumber       String     @unique // Auto-generated: VC-2025-001
+  studentId        String
+  violationId      String
+  violationTypeId  String?
+  inputById        String // User yang input (GURU/ADMIN)
+  violationDate    DateTime
+  classLevel       String // Kelas saat terjadi pelanggaran (X, XI, XII)
   description   String // Deskripsi detail kejadian
   evidenceUrls  String[] // Array URLs bukti file (foto, dokumen)
   location      String? // Lokasi kejadian
@@ -212,9 +245,10 @@ model ViolationCase {
   updatedAt     DateTime   @updatedAt
 
   // Relasi
-  student   Student   @relation(fields: [studentId], references: [id])
-  violation Violation @relation(fields: [violationId], references: [id])
-  inputBy   User      @relation("CaseInputBy", fields: [inputById], references: [id])
+  student       Student        @relation(fields: [studentId], references: [id])
+  violation     Violation      @relation(fields: [violationId], references: [id])
+  violationType ViolationType? @relation(fields: [violationTypeId], references: [id])
+  inputBy       User           @relation("CaseInputBy", fields: [inputById], references: [id])
 
   // Relasi tindakan dan sanksi
   actions   CaseAction[]

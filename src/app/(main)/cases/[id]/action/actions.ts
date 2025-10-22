@@ -87,6 +87,7 @@ export async function createCaseAction(caseId: string, data: {
     followUpDate?: string
     evidenceUrls?: string[]
     notes?: string
+    isCompleted?: boolean
 }) {
     try {
         const session = await getServerSession(authOptions)
@@ -94,23 +95,37 @@ export async function createCaseAction(caseId: string, data: {
             throw new Error('Unauthorized')
         }
 
+        const lastAction = await prisma.caseAction.findFirst({
+            where: { 
+                caseId,
+                deletedAt: null
+            },
+            orderBy: { createdAt: 'desc' },
+            select: { isCompleted: true }
+        })
+
+        if (lastAction && lastAction.isCompleted) {
+            throw new Error('Tidak dapat menambah tindakan baru. Tindakan terakhir sudah selesai. Silakan edit tindakan terakhir untuk mengubah statusnya.')
+        }
+
         const caseAction = await prisma.caseAction.create({
             data: {
                 caseId,
                 actionById: session.user.id,
                 sanctionTypeId: data.sanctionTypeId,
-                actionType: 'SANKSI', // Legacy field
+                actionType: 'SANKSI',
                 description: data.description,
                 followUpDate: data.followUpDate ? new Date(data.followUpDate) : null,
                 evidenceUrls: data.evidenceUrls || [],
                 notes: data.notes,
-                isCompleted: false
+                isCompleted: data.isCompleted || false
             }
         })
 
+        const newStatus = data.isCompleted ? 'SELESAI' : 'PROSES'
         await prisma.violationCase.update({
             where: { id: caseId },
-            data: { status: 'PROSES' }
+            data: { status: newStatus }
         })
 
         revalidatePath(`/cases/${caseId}`)
@@ -118,7 +133,7 @@ export async function createCaseAction(caseId: string, data: {
         return { success: true, actionId: caseAction.id }
     } catch (error) {
         console.error('Error creating case action:', error)
-        throw new Error('Gagal membuat tindakan kasus')
+        throw new Error(error instanceof Error ? error.message : 'Gagal membuat tindakan kasus')
     }
 }
 
@@ -188,10 +203,25 @@ export async function updateCaseAction(actionId: string, data: {
 
         const action = await prisma.caseAction.findUnique({
             where: { id: actionId },
-            select: { caseId: true }
+            select: { caseId: true, isCompleted: true }
         })
 
         if (action) {
+            const lastAction = await prisma.caseAction.findFirst({
+                where: { 
+                    caseId: action.caseId,
+                    deletedAt: null
+                },
+                orderBy: { createdAt: 'desc' },
+                select: { isCompleted: true }
+            })
+
+            const newStatus = lastAction?.isCompleted ? 'SELESAI' : 'PROSES'
+            await prisma.violationCase.update({
+                where: { id: action.caseId },
+                data: { status: newStatus }
+            })
+
             revalidatePath(`/cases/${action.caseId}`)
             revalidatePath(`/cases/${action.caseId}/action`)
         }
@@ -240,7 +270,7 @@ export async function getCaseActions(caseId: string) {
         const actions = await prisma.caseAction.findMany({
             where: { 
                 caseId,
-                deletedAt: null // Only non-deleted actions
+                deletedAt: null
             },
             orderBy: { createdAt: 'desc' },
             include: {
@@ -251,6 +281,7 @@ export async function getCaseActions(caseId: string) {
                 },
                 sanctionType: {
                     select: {
+                        id: true,
                         name: true,
                         level: true
                     }
@@ -267,5 +298,27 @@ export async function getCaseActions(caseId: string) {
     } catch (error) {
         console.error('Error fetching case actions:', error)
         throw new Error('Gagal mengambil data tindakan kasus')
+    }
+}
+
+export async function getLastAction(caseId: string) {
+    try {
+        const lastAction = await prisma.caseAction.findFirst({
+            where: { 
+                caseId,
+                deletedAt: null
+            },
+            orderBy: { createdAt: 'desc' },
+            select: {
+                id: true,
+                isCompleted: true,
+                createdAt: true
+            }
+        })
+
+        return lastAction
+    } catch (error) {
+        console.error('Error fetching last action:', error)
+        return null
     }
 }

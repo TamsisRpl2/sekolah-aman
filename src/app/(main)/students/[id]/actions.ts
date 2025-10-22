@@ -41,6 +41,7 @@ export async function updateStudent(studentId: string, data: {
     parentPhone?: string
     major?: string
     academicYear: string
+    photo?: string
 }) {
     try {
         const session = await getServerSession(authOptions)
@@ -73,6 +74,7 @@ export async function updateStudent(studentId: string, data: {
         if (data.parentName) updateData.parentName = data.parentName
         if (data.parentPhone) updateData.parentPhone = data.parentPhone
         if (data.major) updateData.major = data.major
+        if (data.photo) updateData.photo = data.photo
 
         const updatedStudent = await prisma.student.update({
             where: { id: studentId },

@@ -8,7 +8,7 @@ import {
 } from "react-icons/fa"
 import { MdDashboard } from "react-icons/md"
 import { PiStudentFill } from "react-icons/pi"
-import { IoSettingsSharp, IoAnalytics, IoStatsChart, IoWarning } from "react-icons/io5"
+import { IoSettingsSharp, IoAnalytics, IoStatsChart, IoWarning, IoDocumentText } from "react-icons/io5"
 
 export interface Menu {
     text: string,
@@ -32,6 +32,11 @@ export const menu: Menu[] = [
         text: "Daftar Siswa",
         link: "/students",
         icon: <PiStudentFill className="w-4 h-4" />
+    },
+    {
+        text: "Berita Acara",
+        link: "/berita-acara",
+        icon: <IoDocumentText className="w-4 h-4" />
     },
     {
         text: "Data Master",

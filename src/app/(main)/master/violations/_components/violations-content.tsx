@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { ViolationCategory, Violation, ViolationStats } from '@/types/violation'
 import SanctionInputList from '@/components/sanction-input-list'
+import ViolationTypeInputList from '@/components/violation-type-input-list'
 import { 
     IoWarning, 
     IoAdd, 
@@ -17,125 +18,64 @@ import {
     IoCheckmarkCircle,
     IoAlertCircle
 } from 'react-icons/io5'
+import { 
+    createViolation, 
+    updateViolation, 
+    deleteViolation,
+    createViolationCategory,
+    updateViolationCategory,
+    deleteViolationCategory
+} from '../actions'
 
-export default function ViolationsContent() {
-    const [categories, setCategories] = useState<ViolationCategory[]>([])
-    const [violations, setViolations] = useState<Violation[]>([])
-    const [stats, setStats] = useState<ViolationStats>({
-        totalViolations: 0,
-        totalCategories: 0,
-        violationsByLevel: {
-            ringan: 0,
-            sedang: 0,
-            berat: 0
-        },
-        activeViolations: 0,
-        inactiveViolations: 0
-    })
-    const [searchTerm, setSearchTerm] = useState('')
-    const [selectedLevel, setSelectedLevel] = useState<string>('')
-    const [selectedCategory, setSelectedCategory] = useState<string>('')
-    const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
-    const [loading, setLoading] = useState(true)
 
-    const [showViolationModal, setShowViolationModal] = useState(false)
-    const [showCategoryModal, setShowCategoryModal] = useState(false)
-    const [editingViolation, setEditingViolation] = useState<Violation | null>(null)
-    const [editingCategory, setEditingCategory] = useState<ViolationCategory | null>(null)
+type ViolationsContentProps = {
+    categories: ViolationCategory[]
+    violations: Violation[]
+    stats: ViolationStats
+    searchTerm: string
+    selectedLevel: string
+    selectedCategory: string
+    onSearchTermChange: (v: string) => void
+    onSelectedLevelChange: (v: string) => void
+    onSelectedCategoryChange: (v: string) => void
+    onResetFilters: () => void
+    onRefresh: () => void
+}
 
-    const [violationForm, setViolationForm] = useState({
-        categoryId: '',
-        code: '',
-        name: '',
-        description: '',
-        sanctions: [] as string[], 
-        maxCount: 1,
-        period: 'semester',
-        points: 0,
-        isActive: true
-    })
-    
-    const [categoryForm, setCategoryForm] = useState({
-        code: '',
-        name: '',
-        level: 'RINGAN' as 'RINGAN' | 'SEDANG' | 'BERAT',
-        description: '',
-        isActive: true
-    })
+export default function ViolationsContent({
+    categories,
+    violations,
+    stats,
+    searchTerm,
+    selectedLevel,
+    selectedCategory,
+    onSearchTermChange,
+    onSelectedLevelChange,
+    onSelectedCategoryChange,
+    onResetFilters,
+    onRefresh
+}: ViolationsContentProps) {
+        const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
+        const [showViolationModal, setShowViolationModal] = useState(false)
+        const [showCategoryModal, setShowCategoryModal] = useState(false)
+        const [editingViolation, setEditingViolation] = useState<Violation | null>(null)
+        const [editingCategory, setEditingCategory] = useState<ViolationCategory | null>(null)
+        const [violationForm, setViolationForm] = useState({
+                categoryId: '',
+                code: '',
+                name: '',
+                types: [] as string[],
+                sanctions: [] as string[],
+                points: 'SP 1'
+        })
+        const [categoryForm, setCategoryForm] = useState({
+                code: '',
+                name: '',
+                level: 'RINGAN' as 'RINGAN' | 'SEDANG' | 'BERAT',
+                description: '',
+                isActive: true
+        })
 
-    const fetchCategories = async () => {
-        try {
-            const res = await fetch('/api/master/violation-categories')
-            if (res.ok) {
-                const data = await res.json()
-                setCategories(data.categories || [])
-            }
-        } catch (error) {
-            console.error('Error fetching categories:', error)
-            setCategories([])
-        }
-    }
-
-    const fetchViolations = async () => {
-        try {
-            const params = new URLSearchParams()
-            if (searchTerm) params.append('search', searchTerm)
-            if (selectedLevel) params.append('level', selectedLevel)
-            if (selectedCategory) params.append('categoryId', selectedCategory)
-            params.append('limit', '50')
-
-            const res = await fetch(`/api/master/violations?${params}`)
-            if (res.ok) {
-                const data = await res.json()
-                setViolations(data.violations || [])
-            }
-        } catch (error) {
-            console.error('Error fetching violations:', error)
-            setViolations([])
-        }
-    }
-
-    const fetchStats = async () => {
-        try {
-            const res = await fetch('/api/master/violations/stats')
-            if (res.ok) {
-                const data = await res.json()
-                setStats(data)
-            }
-        } catch (error) {
-            console.error('Error fetching stats:', error)
-            setStats({
-                totalViolations: 0,
-                totalCategories: 0,
-                violationsByLevel: {
-                    ringan: 0,
-                    sedang: 0,
-                    berat: 0
-                },
-                activeViolations: 0,
-                inactiveViolations: 0
-            })
-        }
-    }
-
-    useEffect(() => {
-        const loadData = async () => {
-            setLoading(true)
-            await Promise.all([
-                fetchCategories(),
-                fetchViolations(),
-                fetchStats()
-            ])
-            setLoading(false)
-        }
-        loadData()
-    }, [])
-
-    useEffect(() => {
-        if (!loading) {
-            fetchViolations()
-        }
-    }, [searchTerm, selectedLevel, selectedCategory])
 
     const toggleCategory = (categoryId: string) => {
         const newExpanded = new Set(expandedCategories)
@@ -153,12 +93,9 @@ export default function ViolationsContent() {
             categoryId: '',
             code: '',
             name: '',
-            description: '',
+            types: [],
             sanctions: [],
-            maxCount: 1,
-            period: 'semester',
-            points: 0,
-            isActive: true
+            points: 'SP 1'
         })
         setShowViolationModal(true)
     }
@@ -169,12 +106,9 @@ export default function ViolationsContent() {
             categoryId: violation.categoryId,
             code: violation.code,
             name: violation.name,
-            description: violation.description,
+            types: violation.violationTypes?.map(vt => vt.description) || [],
             sanctions: violation.sanctionTypes?.map(st => st.sanctionType.name) || [],
-            maxCount: violation.maxCount,
-            period: violation.period,
-            points: violation.points,
-            isActive: violation.isActive
+            points: violation.points
         })
         setShowViolationModal(true)
     }
@@ -185,20 +119,12 @@ export default function ViolationsContent() {
         }
 
         try {
-            const res = await fetch(`/api/master/violations/${violationId}`, {
-                method: 'DELETE'
-            })
-
-            if (res.ok) {
-                alert('Pelanggaran berhasil dihapus')
-                await Promise.all([fetchViolations(), fetchStats()])
-            } else {
-                const error = await res.json()
-                alert(error.error || 'Gagal menghapus pelanggaran')
-            }
+            await deleteViolation(violationId)
+            alert('Pelanggaran berhasil dihapus')
+            onRefresh()
         } catch (error) {
             console.error('Error deleting violation:', error)
-            alert('Terjadi kesalahan saat menghapus pelanggaran')
+            alert(error instanceof Error ? error.message : 'Terjadi kesalahan saat menghapus pelanggaran')
         }
     }
 
@@ -206,29 +132,18 @@ export default function ViolationsContent() {
         e.preventDefault()
 
         try {
-            const url = editingViolation 
-                ? `/api/master/violations/${editingViolation.id}`
-                : '/api/master/violations'
-            
-            const method = editingViolation ? 'PUT' : 'POST'
-
-            const res = await fetch(url, {
-                method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(violationForm)
-            })
-
-            if (res.ok) {
-                alert(editingViolation ? 'Pelanggaran berhasil diupdate' : 'Pelanggaran berhasil ditambahkan')
-                setShowViolationModal(false)
-                await Promise.all([fetchViolations(), fetchStats()])
+            if (editingViolation) {
+                await updateViolation(editingViolation.id, violationForm)
+                alert('Pelanggaran berhasil diupdate')
             } else {
-                const error = await res.json()
-                alert(error.error || 'Gagal menyimpan pelanggaran')
+                await createViolation(violationForm)
+                alert('Pelanggaran berhasil ditambahkan')
             }
+            setShowViolationModal(false)
+            onRefresh()
         } catch (error) {
             console.error('Error saving violation:', error)
-            alert('Terjadi kesalahan saat menyimpan pelanggaran')
+            alert(error instanceof Error ? error.message : 'Terjadi kesalahan saat menyimpan pelanggaran')
         }
     }
 
@@ -266,37 +181,25 @@ export default function ViolationsContent() {
         }
 
         try {
-            const url = forceDelete 
-                ? `/api/master/violation-categories/${categoryId}?force=true`
-                : `/api/master/violation-categories/${categoryId}`
-                
-            const res = await fetch(url, {
-                method: 'DELETE'
-            })
-
-            if (res.ok) {
-                const result = await res.json()
-                alert(result.message)
-                await Promise.all([fetchCategories(), fetchViolations(), fetchStats()])
-            } else {
-                const error = await res.json()
-
-                if (error.type === 'has_violations') {
-                    const forceConfirm = confirm(
-                        `${error.error}\n\nApakah Anda ingin menghapus secara permanen? Klik OK untuk hapus permanen, atau Cancel untuk membatalkan.`
-                    )
-                    
-                    if (forceConfirm) {
-                        await handleDeleteCategory(categoryId, categoryName, true) 
-                        return
-                    }
-                } else {
-                    alert(error.error || 'Gagal menghapus kategori')
-                }
-            }
-        } catch (error) {
+            await deleteViolationCategory(categoryId, forceDelete)
+            alert('Kategori berhasil dihapus')
+            onRefresh()
+        } catch (error: any) {
             console.error('Error deleting category:', error)
-            alert('Terjadi kesalahan saat menghapus kategori')
+            
+            // Check if error is about violations still exist
+            if (error.message.includes('masih digunakan')) {
+                const forceConfirm = confirm(
+                    `${error.message}\n\nApakah Anda ingin menghapus secara permanen? Klik OK untuk hapus permanen, atau Cancel untuk membatalkan.`
+                )
+                
+                if (forceConfirm) {
+                    await handleDeleteCategory(categoryId, categoryName, true)
+                    return
+                }
+            } else {
+                alert(error.message || 'Terjadi kesalahan saat menghapus kategori')
+            }
         }
     }
 
@@ -304,29 +207,18 @@ export default function ViolationsContent() {
         e.preventDefault()
 
         try {
-            const url = editingCategory 
-                ? `/api/master/violation-categories/${editingCategory.id}`
-                : '/api/master/violation-categories'
-            
-            const method = editingCategory ? 'PUT' : 'POST'
-
-            const res = await fetch(url, {
-                method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(categoryForm)
-            })
-
-            if (res.ok) {
-                alert(editingCategory ? 'Kategori berhasil diupdate' : 'Kategori berhasil ditambahkan')
-                setShowCategoryModal(false)
-                await Promise.all([fetchCategories(), fetchViolations(), fetchStats()])
+            if (editingCategory) {
+                await updateViolationCategory(editingCategory.id, categoryForm)
+                alert('Kategori berhasil diupdate')
             } else {
-                const error = await res.json()
-                alert(error.error || 'Gagal menyimpan kategori')
+                await createViolationCategory(categoryForm)
+                alert('Kategori berhasil ditambahkan')
             }
+            setShowCategoryModal(false)
+            onRefresh()
         } catch (error) {
             console.error('Error saving category:', error)
-            alert('Terjadi kesalahan saat menyimpan kategori')
+            alert(error instanceof Error ? error.message : 'Terjadi kesalahan saat menyimpan kategori')
         }
     }
 
@@ -347,22 +239,9 @@ export default function ViolationsContent() {
         return violations.filter(v => v.categoryId === categoryId)
     }
 
-    const handleRefresh = () => {
-        Promise.all([fetchCategories(), fetchViolations(), fetchStats()])
-    }
 
-    if (loading) {
-        return (
-            <main className="p-6 space-y-6 bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
-                <div className="flex justify-center items-center h-64">
-                    <div className="flex flex-col items-center gap-4">
-                        <span className="loading loading-spinner loading-lg"></span>
-                        <p className="text-slate-600">Memuat data pelanggaran...</p>
-                    </div>
-                </div>
-            </main>
-        )
-    }
+
+
 
     return (
         <main className="p-6 space-y-6 bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
@@ -375,7 +254,7 @@ export default function ViolationsContent() {
                 </div>
                 <button 
                     className="btn bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 border-0 text-white shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl"
-                    onClick={handleRefresh}
+                    onClick={onRefresh}
                 >
                     <IoRefresh className="w-4 h-4" />
                     Refresh
@@ -453,7 +332,7 @@ export default function ViolationsContent() {
                                 placeholder="Masukkan nama pelanggaran..."
                                 className="input bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl shadow-sm transition-all duration-200 pl-10 w-full"
                                 value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
+                                onChange={(e) => onSearchTermChange(e.target.value)}
                             />
                         </div>
                     </div>
@@ -463,7 +342,7 @@ export default function ViolationsContent() {
                         <select
                             className="select bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl shadow-sm transition-all duration-200 w-full"
                             value={selectedLevel}
-                            onChange={(e) => setSelectedLevel(e.target.value)}
+                            onChange={(e) => onSelectedLevelChange(e.target.value)}
                         >
                             <option value="">Semua Level</option>
                             <option value="RINGAN">Ringan</option>
@@ -477,7 +356,7 @@ export default function ViolationsContent() {
                         <select
                             className="select bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl shadow-sm transition-all duration-200 w-full"
                             value={selectedCategory}
-                            onChange={(e) => setSelectedCategory(e.target.value)}
+                            onChange={(e) => onSelectedCategoryChange(e.target.value)}
                         >
                             <option value="">Semua Kategori</option>
                             {Array.isArray(categories) && categories.map((category) => (
@@ -492,11 +371,7 @@ export default function ViolationsContent() {
                         <label className="text-sm font-medium text-slate-700">&nbsp;</label>
                         <button
                             className="btn bg-gradient-to-r from-slate-500 to-slate-600 hover:from-slate-600 hover:to-slate-700 border-0 text-white shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl w-full"
-                            onClick={() => {
-                                setSearchTerm('')
-                                setSelectedLevel('')
-                                setSelectedCategory('')
-                            }}
+                            onClick={onResetFilters}
                         >
                             Reset Filter
                         </button>
@@ -590,24 +465,30 @@ export default function ViolationsContent() {
                                                     <div className="flex justify-between items-start">
                                                         <div className="flex-1">
                                                             <h5 className="font-medium text-slate-800 mb-1">{violation.name}</h5>
-                                                            <p className="text-sm text-slate-600 mb-3">
-                                                                {violation.description}
-                                                            </p>
+                                                            
+                                                            {/* Display Violation Types */}
+                                                            {violation.violationTypes && violation.violationTypes.length > 0 && (
+                                                                <div className="text-sm text-slate-600 mb-3">
+                                                                    <ul className="list-disc list-inside space-y-1">
+                                                                        {violation.violationTypes.map((vt) => (
+                                                                            <li key={vt.id}>{vt.description}</li>
+                                                                        ))}
+                                                                    </ul>
+                                                                </div>
+                                                            )}
+                                                            
                                                             <div className="flex gap-2 mb-2">
                                                                 {getTingkatBadge(violation.category?.level || 'RINGAN')}
                                                                 <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700 border border-blue-200">
-                                                                    {violation.points} poin
+                                                                    {violation.points}
                                                                 </span>
-                                                                {violation.maxCount && (
-                                                                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200">
-                                                                        Max {violation.maxCount}x/{violation.period}
-                                                                    </span>
-                                                                )}
                                                             </div>
+                                                            
+                                                            {/* Display Sanction Types */}
                                                             {violation.sanctionTypes && violation.sanctionTypes.length > 0 && (
                                                                 <div className="text-xs mt-2 flex flex-wrap gap-1">
                                                                     <span className="text-slate-500">Sanksi:</span>
-                                                                    {violation.sanctionTypes.map((st, index) => (
+                                                                    {violation.sanctionTypes.map((st) => (
                                                                         <span key={st.sanctionTypeId} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700 border border-orange-200">
                                                                             {st.sanctionType.name}
                                                                         </span>
@@ -718,15 +599,13 @@ export default function ViolationsContent() {
                                     />
                                 </div>
 
-                                <div className="md:col-span-2 space-y-2">
-                                    <label className="text-sm font-medium text-slate-700">Deskripsi *</label>
-                                    <textarea
-                                        className="textarea bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl shadow-sm transition-all duration-200 w-full"
-                                        value={violationForm.description}
-                                        onChange={(e) => setViolationForm(prev => ({ ...prev, description: e.target.value }))}
-                                        placeholder="Deskripsi detail pelanggaran"
-                                        rows={3}
-                                        required
+                                <div className="md:col-span-2">
+                                    <ViolationTypeInputList
+                                        types={violationForm.types}
+                                        onTypesChange={(types: string[]) => 
+                                            setViolationForm(prev => ({ ...prev, types }))
+                                        }
+                                        className="w-full"
                                     />
                                 </div>
 
@@ -740,52 +619,18 @@ export default function ViolationsContent() {
                                     />
                                 </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-sm font-medium text-slate-700">Batas Maksimal *</label>
-                                    <input
-                                        type="number"
-                                        className="input bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl shadow-sm transition-all duration-200 w-full"
-                                        value={violationForm.maxCount}
-                                        onChange={(e) => setViolationForm(prev => ({ ...prev, maxCount: parseInt(e.target.value) || 1 }))}
-                                        min="1"
-                                        required
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className="text-sm font-medium text-slate-700">Periode *</label>
+                                <div className="md:col-span-2 space-y-2">
+                                    <label className="text-sm font-medium text-slate-700">Poin Pelanggaran *</label>
                                     <select
                                         className="select bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl shadow-sm transition-all duration-200 w-full"
-                                        value={violationForm.period}
-                                        onChange={(e) => setViolationForm(prev => ({ ...prev, period: e.target.value }))}
+                                        value={violationForm.points}
+                                        onChange={(e) => setViolationForm(prev => ({ ...prev, points: e.target.value }))}
                                         required
                                     >
-                                        <option value="semester">Semester</option>
-                                        <option value="bulan">Bulan</option>
-                                        <option value="tahun">Tahun</option>
+                                        <option value="SP 1">SP 1 (Surat Peringatan 1)</option>
+                                        <option value="SP 2">SP 2 (Surat Peringatan 2)</option>
+                                        <option value="SP 3">SP 3 (Surat Peringatan 3)</option>
                                     </select>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className="text-sm font-medium text-slate-700">Poin Pelanggaran *</label>
-                                    <input
-                                        type="number"
-                                        className="input bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl shadow-sm transition-all duration-200 w-full"
-                                        value={violationForm.points}
-                                        onChange={(e) => setViolationForm(prev => ({ ...prev, points: parseInt(e.target.value) || 0 }))}
-                                        min="0"
-                                        required
-                                    />
-                                </div>
-
-                                <div className="flex items-center space-x-3">
-                                    <input
-                                        type="checkbox"
-                                        className="checkbox checkbox-primary"
-                                        checked={violationForm.isActive}
-                                        onChange={(e) => setViolationForm(prev => ({ ...prev, isActive: e.target.checked }))}
-                                    />
-                                    <label className="text-sm font-medium text-slate-700">Status Aktif</label>
                                 </div>
                             </div>
 

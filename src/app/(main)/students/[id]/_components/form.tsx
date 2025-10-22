@@ -3,8 +3,11 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { IoArrowBack, IoSave, IoPerson, IoCall, IoLocation, IoCalendar, IoSchool } from 'react-icons/io5'
 import { Student, StudentFormData } from '@/types/student'
+
+const FileUpload = dynamic(() => import('@/components/file-upload'), { ssr: false })
 
 interface Props {
     studentId: string
@@ -15,6 +18,7 @@ const Form = ({ studentId }: Props) => {
     const [loading, setLoading] = useState(false)
     const [loadingData, setLoadingData] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    const [photo, setPhoto] = useState<string>('')
     const router = useRouter()
 
     useEffect(() => {
@@ -26,6 +30,9 @@ const Form = ({ studentId }: Props) => {
                 }
                 const data = await response.json()
                 setStudent(data.student)
+                if (data.student.photo) {
+                    setPhoto(data.student.photo)
+                }
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Terjadi kesalahan')
             } finally {
@@ -41,6 +48,12 @@ const Form = ({ studentId }: Props) => {
         setLoading(true)
         setError(null)
 
+        if (!photo) {
+            setError('Foto siswa wajib diupload')
+            setLoading(false)
+            return
+        }
+
         const formData = new FormData(e.currentTarget)
         
         const studentData: Partial<StudentFormData> = {
@@ -55,6 +68,7 @@ const Form = ({ studentId }: Props) => {
             academicYear: formData.get('academicYear') as string,
             parentName: formData.get('parentName') as string || undefined,
             address: formData.get('address') as string || undefined,
+            photo: photo
         }
 
         try {
@@ -201,6 +215,18 @@ const Form = ({ studentId }: Props) => {
                                         </label>
                                     </div>
                                 </div>
+                            </div>
+
+                            <div className="group">
+                                <FileUpload
+                                    value={photo}
+                                    onChange={setPhoto}
+                                    accept="image/*"
+                                    maxSize={30}
+                                    label="Foto Siswa"
+                                    placeholder="Upload foto siswa (wajib, max 30MB)"
+                                    required
+                                />
                             </div>
                         </div>
 

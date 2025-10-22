@@ -3,7 +3,6 @@ import dynamic from "next/dynamic";
 const Navbar = dynamic(() => import("./_components/navbar"))
 const Hero = dynamic(() => import("./_components/hero"))
 const Feature = dynamic(() => import("./_components/feature"))
-const Stats = dynamic(() => import("./_components/stats"))
 const Cta = dynamic(() => import("./_components/cta"))
 const Footer = dynamic(() => import("./_components/footer"))
 
@@ -13,7 +12,7 @@ const page = () => {
       <Navbar />
       <Hero />
       <Feature />
-      <Stats />
+      {/* <Stats /> */}
       <Cta />
       <Footer />
     </div>

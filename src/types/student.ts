@@ -12,6 +12,7 @@ export interface Student {
   major?: string | null
   academicYear: string
   isActive: boolean
+  photo?: string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -29,6 +30,7 @@ export interface StudentFormData {
   parentName?: string
   address?: string
   isActive: boolean
+  photo?: string
 }
 
 export interface StudentsListResponse {

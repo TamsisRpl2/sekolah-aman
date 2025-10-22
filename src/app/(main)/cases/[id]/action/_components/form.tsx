@@ -1,11 +1,28 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
-import { useCase, caseAPI } from '@/lib/hooks/useCases'
-import { ActionFormData } from '@/types/cases'
-import { IoSave, IoArrowBack, IoCheckmarkCircle, IoCalendar, IoDocument, IoWarning } from 'react-icons/io5'
+import { useState, useEffect, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
+import { IoSave, IoCheckmarkCircle, IoDocumentText, IoCalendarOutline, IoInformationCircle, IoCloudUpload } from 'react-icons/io5'
 import MultiFileUpload from '@/components/multi-file-upload'
+import { createCaseAction, getSanctionTypesForViolation } from '../actions'
+
+interface CaseData {
+    id: string
+    caseNumber: string
+    status: string
+    student: {
+        name: string
+        nis: string
+        major: string | null
+    }
+    violation: {
+        id: string
+        name: string
+        category: {
+            level: string
+        }
+    }
+}
 
 interface SanctionType {
     id: string
@@ -15,334 +32,290 @@ interface SanctionType {
     duration?: number | null
 }
 
-const Form = () => {
-    const params = useParams()
+interface FormProps {
+    caseData: CaseData
+    lastAction: {
+        id: string
+        isCompleted: boolean
+        createdAt: Date
+    } | null
+}
+
+const Form = ({ caseData, lastAction }: FormProps) => {
     const router = useRouter()
-    const id = params.id as string
-    const { caseData, loading: caseLoading, error } = useCase(id)
-    const [loading, setLoading] = useState(false)
+    const [isPending, startTransition] = useTransition()
     const [availableSanctions, setAvailableSanctions] = useState<SanctionType[]>([])
-    const [sanctionsLoading, setSanctionsLoading] = useState(false)
+    const [sanctionsLoading, setSanctionsLoading] = useState(true)
+    const [error, setError] = useState<string | null>(null)
+    const [success, setSuccess] = useState(false)
     
-    const [formData, setFormData] = useState<ActionFormData>({
-        actionType: '',
+    const [formData, setFormData] = useState({
+        sanctionTypeId: '',
         description: '',
-        evidenceUrls: [],
+        evidenceUrls: [] as string[],
         followUpDate: '',
-        isCompleted: false,
-        notes: ''
+        notes: '',
+        isCompleted: false
     })
 
+    const isFormDisabled = lastAction?.isCompleted || false
+
     useEffect(() => {
-        const fetchAvailableSanctions = async () => {
-            if (!caseData?.violation?.id) return
-            
+        const fetchSanctions = async () => {
             try {
                 setSanctionsLoading(true)
-                const response = await fetch(`/api/master/violations/${caseData.violation.id}`)
-                if (response.ok) {
-                    const violationData = await response.json()
-                    // Extract sanction types from violation
-                    const sanctions = violationData.sanctionTypes?.map((st: any) => ({
-                        id: st.sanctionType.id,
-                        name: st.sanctionType.name,
-                        description: st.sanctionType.description,
-                        level: st.sanctionType.level,
-                        duration: st.sanctionType.duration
-                    })) || []
-                    setAvailableSanctions(sanctions)
-                }
+                const sanctions = await getSanctionTypesForViolation(caseData.violation.id)
+                setAvailableSanctions(sanctions)
             } catch (error) {
-                console.error('Error fetching available sanctions:', error)
+                console.error('Error fetching sanctions:', error)
                 setAvailableSanctions([])
             } finally {
                 setSanctionsLoading(false)
             }
         }
 
-        fetchAvailableSanctions()
-    }, [caseData?.violation?.id])
+        fetchSanctions()
+    }, [caseData.violation.id])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
-        
-        if (!formData.actionType || !formData.description) {
-            alert('Mohon lengkapi semua field yang wajib diisi')
+        setError(null)
+        setSuccess(false)
+
+        if (!formData.sanctionTypeId || !formData.description) {
+            setError('Mohon lengkapi semua field yang wajib diisi')
             return
         }
 
-        try {
-            setLoading(true)
-            await caseAPI.addAction(id, formData)
-            
-            // Reset form
-            setFormData({
-                actionType: '',
-                description: '',
-                evidenceUrls: [],
-                followUpDate: '',
-                isCompleted: false,
-                notes: ''
-            })
-            
-            // Reload the page to refresh timeline
-            window.location.reload()
-        } catch (error) {
-            alert('Gagal menambah tindakan: ' + (error instanceof Error ? error.message : 'Unknown error'))
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    if (caseLoading) {
-        return (
-            <div className="flex justify-center items-center h-64">
-                <span className="loading loading-spinner loading-lg"></span>
-            </div>
-        )
-    }
-
-    if (error) {
-        return (
-            <div className="alert alert-error">
-                <span>Error: {error}</span>
-            </div>
-        )
-    }
-
-    if (!caseData) {
-        return (
-            <div className="alert alert-warning">
-                <span>Kasus tidak ditemukan</span>
-            </div>
-        )
-    }
-
-    // Check if there are any completed actions
-    const hasCompletedAction = caseData.actions?.some(action => action.isCompleted) || false
-
-    if (hasCompletedAction) {
-        return (
-            <div className="space-y-6">
-                {/* Case Info */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                            <IoWarning className="w-5 h-5 text-red-600" />
-                        </div>
-                        <div>
-                            <h2 className="text-lg font-semibold text-gray-900">Informasi Kasus</h2>
-                            <p className="text-sm text-gray-600">{caseData.caseNumber}</p>
-                        </div>
-                    </div>
-
-                    <div className="space-y-2 text-sm">
-                        <p><span className="font-medium">Siswa:</span> {caseData.student.name} ({caseData.student.nis})</p>
-                        <p><span className="font-medium">Kelas:</span> {caseData.classLevel}</p>
-                        <p><span className="font-medium">Pelanggaran:</span> {caseData.violation.name}</p>
-                        <p><span className="font-medium">Tanggal:</span> {new Date(caseData.violationDate).toLocaleDateString('id-ID')}</p>
-                    </div>
-                </div>
-
-                {/* Completed Action Notice */}
-                <div className="bg-green-50 border border-green-200 rounded-xl p-6">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                            <IoCheckmarkCircle className="w-5 h-5 text-green-600" />
-                        </div>
-                        <div>
-                            <h3 className="text-lg font-semibold text-green-900">Kasus Sudah Selesai</h3>
-                            <p className="text-sm text-green-700">Tindakan untuk kasus ini sudah dinyatakan selesai</p>
-                        </div>
-                    </div>
-                    
-                    <div className="bg-white/50 rounded-lg p-4 mb-4">
-                        <p className="text-sm text-green-800">
-                            <strong>Informasi:</strong> Kasus ini sudah memiliki tindakan yang dinyatakan selesai. 
-                            Tidak dapat menambahkan tindakan baru untuk kasus yang sudah selesai.
-                        </p>
-                    </div>
-
-                    <div className="flex gap-3">
-                        <button
-                            type="button"
-                            className="btn btn-outline border-green-300 text-green-700 hover:bg-green-100"
-                            onClick={() => router.back()}
-                        >
-                            <IoArrowBack className="w-4 h-4" />
-                            Kembali ke Detail Kasus
-                        </button>
-                        <button
-                            type="button"
-                            className="btn bg-green-600 text-white hover:bg-green-700"
-                            onClick={() => router.push('/cases')}
-                        >
-                            Lihat Daftar Kasus
-                        </button>
-                    </div>
-                </div>
-            </div>
-        )
+        startTransition(async () => {
+            try {
+                await createCaseAction(caseData.id, formData)
+                
+                setSuccess(true)
+                setFormData({
+                    sanctionTypeId: '',
+                    description: '',
+                    evidenceUrls: [],
+                    followUpDate: '',
+                    notes: '',
+                    isCompleted: false
+                })
+                
+                // Refresh after delay to show success message
+                setTimeout(() => {
+                    router.refresh()
+                }, 1500)
+            } catch (error) {
+                setError(error instanceof Error ? error.message : 'Gagal menambah tindakan')
+            }
+        })
     }
 
     return (
-        <div className="space-y-6">
-            {/* Case Info */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                        <IoWarning className="w-5 h-5 text-red-600" />
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 p-6 text-white">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-white/20 rounded-lg">
+                        <IoDocumentText className="w-6 h-6" />
                     </div>
                     <div>
-                        <h2 className="text-lg font-semibold text-gray-900">Informasi Kasus</h2>
-                        <p className="text-sm text-gray-600">{caseData.caseNumber}</p>
+                        <h2 className="text-xl font-bold">Tambah Tindakan Baru</h2>
+                        <p className="text-emerald-100 text-sm mt-1">Catat tindakan yang dilakukan untuk kasus ini</p>
                     </div>
-                </div>
-
-                <div className="space-y-2 text-sm">
-                    <p><span className="font-medium">Siswa:</span> {caseData.student.name} ({caseData.student.nis})</p>
-                    <p><span className="font-medium">Kelas:</span> {caseData.classLevel}</p>
-                    <p><span className="font-medium">Pelanggaran:</span> {caseData.violation.name}</p>
-                    <p><span className="font-medium">Tanggal:</span> {new Date(caseData.violationDate).toLocaleDateString('id-ID')}</p>
                 </div>
             </div>
 
-            {/* Action Form */}
-            <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                            <IoDocument className="w-5 h-5 text-blue-600" />
-                        </div>
+            {/* Form */}
+            <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                {/* Warning if last action is completed */}
+                {isFormDisabled && (
+                    <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4 flex items-start gap-3">
+                        <IoInformationCircle className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
                         <div>
-                            <h2 className="text-lg font-semibold text-gray-900">Tambah Tindakan</h2>
-                            <p className="text-sm text-gray-600">Catat tindakan yang dilakukan untuk kasus ini</p>
+                            <p className="text-amber-900 font-semibold">Tindakan Terakhir Sudah Selesai</p>
+                            <p className="text-amber-800 text-sm mt-1">
+                                Tidak dapat menambah tindakan baru karena tindakan terakhir sudah ditandai selesai. 
+                                Silakan <strong>edit tindakan terakhir</strong> dan ubah statusnya menjadi &ldquo;Dalam Proses&rdquo; jika ingin menambah tindakan baru.
+                            </p>
                         </div>
                     </div>
+                )}
 
-                    <div className="space-y-4">
-                        <div className="form-control">
-                            <label className="label">
-                                <span className="label-text">Sanksi yang Dipilih *</span>
-                            </label>
-                            <select 
-                                className="select select-bordered"
-                                value={formData.actionType}
-                                onChange={(e) => setFormData(prev => ({ ...prev, actionType: e.target.value }))}
-                                required
-                                disabled={sanctionsLoading || availableSanctions.length === 0}
-                            >
-                                <option value="">
-                                    {sanctionsLoading 
-                                        ? "Memuat sanksi..." 
-                                        : availableSanctions.length === 0 
-                                        ? "Tidak ada sanksi tersedia"
-                                        : "-- Pilih Sanksi --"
-                                    }
-                                </option>
-                                {availableSanctions.map(sanction => (
-                                    <option key={sanction.id} value={sanction.id}>
-                                        {sanction.name}
-                                        {sanction.duration && ` (${sanction.duration} hari)`}
-                                    </option>
-                                ))}
-                            </select>
-                            {availableSanctions.length === 0 && !sanctionsLoading && (
-                                <div className="label">
-                                    <span className="label-text-alt text-warning">
-                                        Pelanggaran ini belum memiliki sanksi yang didefinisikan
-                                    </span>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="form-control">
-                            <label className="label">
-                                <span className="label-text">Deskripsi Tindakan *</span>
-                            </label>
-                            <textarea 
-                                className="textarea textarea-bordered h-24"
-                                placeholder="Jelaskan detail tindakan yang dilakukan..."
-                                value={formData.description}
-                                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                                required
-                            ></textarea>
-                        </div>
-
-                        <div className="form-control">
-                            <label className="label">
-                                <span className="label-text">Tanggal Follow-up (Opsional)</span>
-                            </label>
-                            <input 
-                                type="date"
-                                className="input input-bordered"
-                                value={formData.followUpDate}
-                                onChange={(e) => setFormData(prev => ({ ...prev, followUpDate: e.target.value }))}
-                                min={new Date().toISOString().split('T')[0]}
-                            />
-                        </div>
-
-                        <div className="form-control">
-                            <MultiFileUpload
-                                label="Bukti Tindakan (Opsional)"
-                                placeholder="Upload bukti tindakan yang dilakukan (foto, dokumen, dll)"
-                                value={formData.evidenceUrls || []}
-                                onChange={(urls) => setFormData(prev => ({ ...prev, evidenceUrls: urls }))}
-                                maxFiles={3}
-                                maxSize={10}
-                                accept="image/*,application/pdf"
-                            />
-                        </div>
-
-                        <div className="form-control">
-                            <label className="label cursor-pointer">
-                                <span className="label-text">Tandai sebagai selesai</span>
-                                <input 
-                                    type="checkbox"
-                                    className="checkbox checkbox-primary"
-                                    checked={formData.isCompleted}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, isCompleted: e.target.checked }))}
-                                />
-                            </label>
-                        </div>
-
-                        <div className="form-control">
-                            <label className="label">
-                                <span className="label-text">Catatan Tambahan</span>
-                            </label>
-                            <textarea 
-                                className="textarea textarea-bordered h-20"
-                                placeholder="Catatan atau informasi tambahan..."
-                                value={formData.notes}
-                                onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                            ></textarea>
+                {/* Success Message */}
+                {success && (
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3">
+                        <IoCheckmarkCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                            <p className="text-green-800 font-medium">Tindakan berhasil ditambahkan!</p>
+                            <p className="text-green-700 text-sm mt-1">Timeline akan diperbarui otomatis.</p>
                         </div>
                     </div>
+                )}
+
+                {/* Error Message */}
+                {error && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+                        <IoInformationCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                        <p className="text-red-800 text-sm">{error}</p>
+                    </div>
+                )}
+
+                {/* Sanction Type Select */}
+                <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-slate-700">
+                        Jenis Sanksi <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                        value={formData.sanctionTypeId}
+                        onChange={(e) => setFormData(prev => ({ ...prev, sanctionTypeId: e.target.value }))}
+                        className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 transition-all duration-200 focus:outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+                        required
+                        disabled={sanctionsLoading || availableSanctions.length === 0 || isPending || isFormDisabled}
+                    >
+                        <option value="">
+                            {sanctionsLoading 
+                                ? "Memuat sanksi..." 
+                                : availableSanctions.length === 0 
+                                ? "Tidak ada sanksi tersedia"
+                                : "-- Pilih Jenis Sanksi --"
+                            }
+                        </option>
+                        {availableSanctions.map(sanction => (
+                            <option key={sanction.id} value={sanction.id}>
+                                {sanction.name}
+                                {sanction.duration && ` (${sanction.duration} hari)`}
+                            </option>
+                        ))}
+                    </select>
+                    {availableSanctions.length === 0 && !sanctionsLoading && (
+                        <p className="text-sm text-amber-600 flex items-center gap-2 mt-2">
+                            <IoInformationCircle className="w-4 h-4" />
+                            Pelanggaran ini belum memiliki sanksi yang didefinisikan
+                        </p>
+                    )}
                 </div>
 
-                {/* Action Buttons */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <div className="flex flex-col sm:flex-row gap-3">
-                        <button
-                            type="button"
-                            className="btn btn-outline"
-                            onClick={() => router.back()}
-                        >
-                            <IoArrowBack className="w-4 h-4" />
-                            Kembali
-                        </button>
-                        <button
-                            type="submit"
-                            className="btn bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 border-0 text-white flex-1"
-                            disabled={loading}
-                        >
-                            {loading ? (
-                                <span className="loading loading-spinner loading-sm"></span>
-                            ) : (
-                                <IoSave className="w-4 h-4" />
-                            )}
-                            {loading ? 'Menyimpan...' : 'Simpan Tindakan'}
-                        </button>
+                {/* Description */}
+                <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-slate-700">
+                        Deskripsi Tindakan <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                        value={formData.description}
+                        onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                        rows={4}
+                        placeholder="Jelaskan tindakan yang dilakukan secara detail..."
+                        className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 transition-all duration-200 focus:outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100 resize-none"
+                        required
+                        disabled={isPending || isFormDisabled}
+                    />
+                    <p className="text-xs text-slate-500">
+                        Tuliskan detail tindakan yang dilakukan, termasuk waktu dan pihak yang terlibat
+                    </p>
+                </div>
+
+                {/* Status Tindakan */}
+                <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-slate-700">
+                        Status Tindakan <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                        value={formData.isCompleted ? 'selesai' : 'proses'}
+                        onChange={(e) => setFormData(prev => ({ ...prev, isCompleted: e.target.value === 'selesai' }))}
+                        className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 transition-all duration-200 focus:outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+                        required
+                        disabled={isPending || isFormDisabled}
+                    >
+                        <option value="proses">Dalam Proses</option>
+                        <option value="selesai">Selesai</option>
+                    </select>
+                    <p className="text-xs text-slate-500">
+                        {formData.isCompleted 
+                            ? '⚠️ Tindakan akan ditandai selesai. Tidak dapat menambah tindakan baru setelah ini.' 
+                            : 'Tindakan masih dalam proses. Anda dapat menambah tindakan lanjutan.'}
+                    </p>
+                </div>
+
+                {/* Follow-up Date */}
+                <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                        <IoCalendarOutline className="w-4 h-4" />
+                        Tanggal Follow-up <span className="text-slate-400 font-normal">(Opsional)</span>
+                    </label>
+                    <input
+                        type="date"
+                        value={formData.followUpDate}
+                        onChange={(e) => setFormData(prev => ({ ...prev, followUpDate: e.target.value }))}
+                        min={new Date().toISOString().split('T')[0]}
+                        className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 transition-all duration-200 focus:outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+                        disabled={isPending || isFormDisabled}
+                    />
+                </div>
+
+                {/* Evidence Upload */}
+                <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                        <IoCloudUpload className="w-4 h-4" />
+                        Bukti Tindakan <span className="text-slate-400 font-normal">(Opsional)</span>
+                    </label>
+                    <MultiFileUpload
+                        label=""
+                        placeholder="Upload foto atau dokumen bukti tindakan"
+                        value={formData.evidenceUrls}
+                        onChange={(urls) => setFormData(prev => ({ ...prev, evidenceUrls: urls }))}
+                        maxFiles={5}
+                        maxSize={10}
+                        accept="image/*,application/pdf"
+                    />
+                </div>
+
+                {/* Notes */}
+                <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-slate-700">
+                        Catatan Tambahan <span className="text-slate-400 font-normal">(Opsional)</span>
+                    </label>
+                    <textarea
+                        value={formData.notes}
+                        onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                        rows={3}
+                        placeholder="Tambahkan catatan penting lainnya..."
+                        className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 transition-all duration-200 focus:outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100 resize-none"
+                        disabled={isPending || isFormDisabled}
+                    />
+                </div>
+
+                {/* Submit Button */}
+                <div className="pt-4">
+                    <button
+                        type="submit"
+                        disabled={isPending || sanctionsLoading || availableSanctions.length === 0 || isFormDisabled}
+                        className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-lg"
+                    >
+                        {isPending ? (
+                            <>
+                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                <span>Menyimpan Tindakan...</span>
+                            </>
+                        ) : (
+                            <>
+                                <IoSave className="w-5 h-5" />
+                                <span>Simpan Tindakan</span>
+                            </>
+                        )}
+                    </button>
+                </div>
+
+                {/* Info Box */}
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                        <IoInformationCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                        <div className="text-sm text-blue-800">
+                            <p className="font-medium mb-1">Informasi</p>
+                            <p className="text-blue-700">
+                                Tindakan yang ditambahkan akan tercatat dalam timeline dan dapat dilihat oleh semua pihak terkait.
+                            </p>
+                        </div>
                     </div>
                 </div>
             </form>
