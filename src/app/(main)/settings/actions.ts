@@ -4,6 +4,71 @@ import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import bcrypt from 'bcryptjs'
+
+export async function changePassword(data: {
+    currentPassword: string
+    newPassword: string
+}) {
+    try {
+        const session = await getServerSession(authOptions)
+        if (!session?.user?.id) {
+            throw new Error('Unauthorized')
+        }
+
+        if (!data.currentPassword || !data.newPassword) {
+            throw new Error('Password saat ini dan password baru harus diisi')
+        }
+
+        if (data.newPassword.length < 8) {
+            throw new Error('Password baru minimal 8 karakter')
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { id: session.user.id },
+            select: { id: true, password: true, email: true }
+        })
+
+        if (!user) {
+            throw new Error('User tidak ditemukan')
+        }
+
+        const isPasswordValid = await bcrypt.compare(
+            data.currentPassword,
+            user.password
+        )
+
+        if (!isPasswordValid) {
+            throw new Error('Password saat ini salah')
+        }
+
+        const hashedNewPassword = await bcrypt.hash(data.newPassword, 12)
+
+        await prisma.user.update({
+            where: { id: session.user.id },
+            data: { password: hashedNewPassword }
+        })
+
+        await prisma.auditLog.create({
+            data: {
+                userId: session.user.id,
+                action: 'CHANGE_PASSWORD',
+                entity: 'User',
+                entityId: session.user.id,
+                newData: {
+                    email: user.email,
+                    timestamp: new Date()
+                }
+            }
+        })
+
+        revalidatePath('/settings')
+        return { success: true, message: 'Password berhasil diubah' }
+    } catch (error) {
+        console.error('Error changing password:', error)
+        throw new Error(error instanceof Error ? error.message : 'Gagal mengubah password')
+    }
+}
 
 export async function getSystemConfigs() {
     try {

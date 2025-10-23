@@ -81,9 +81,90 @@ await prisma.user.update({
     }
 }
 
+export async function updateUserProfile(data: {
+    name: string
+    phone?: string
+    address?: string
+}) {
+    try {
+        const session = await getServerSession(authOptions)
+        if (!session?.user?.id) {
+            throw new Error('Unauthorized')
+        }
+
+        if (!data.name || data.name.trim().length === 0) {
+            throw new Error('Nama tidak boleh kosong')
+        }
+
+        const updatedUser = await prisma.user.update({
+            where: { id: session.user.id },
+            data: {
+                name: data.name.trim(),
+                phone: data.phone?.trim() || null,
+                address: data.address?.trim() || null,
+            },
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                address: true,
+                role: true,
+                image: true,
+            }
+        })
+
+        revalidatePath('/profile')
+        return { 
+            success: true, 
+            user: updatedUser 
+        }
+    } catch (error) {
+        console.error('Error updating user profile:', error)
+        throw new Error(error instanceof Error ? error.message : 'Gagal mengupdate profil')
+    }
+}
+
+export async function getUserProfile(userId: string) {
+    try {
+        const session = await getServerSession(authOptions)
+        if (!session?.user?.id) {
+            throw new Error('Unauthorized')
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { 
+                id: true,
+                name: true, 
+                email: true, 
+                phone: true,
+                address: true,
+                role: true,
+                image: true,
+                createdAt: true,
+                isActive: true
+            }
+        })
+
+        if (!user) {
+            throw new Error('User tidak ditemukan')
+        }
+
+        return user
+    } catch (error) {
+        console.error('Error fetching user profile:', error)
+        throw new Error('Gagal mengambil data profil')
+    }
+}
+
 export async function getUserStats(userId: string) {
     try {
-        
+        const session = await getServerSession(authOptions)
+        if (!session?.user?.id) {
+            throw new Error('Unauthorized')
+        }
+
         const user = await prisma.user.findUnique({
             where: { id: userId },
             select: { role: true, name: true, email: true, image: true }
@@ -93,43 +174,70 @@ export async function getUserStats(userId: string) {
             throw new Error('User tidak ditemukan')
         }
 
-        let stats = {
-            casesHandled: 0,
-            studentsHandled: 0,
-            violationsReported: 0,
-            activeThisMonth: 0
+        const totalCasesReviewed = await prisma.violationCase.count({
+            where: { inputById: userId }
+        })
+
+        const totalCasesResolved = await prisma.violationCase.count({
+            where: { 
+                inputById: userId,
+                status: 'SELESAI'
+            }
+        })
+
+        const firstCase = await prisma.violationCase.findFirst({
+            where: { inputById: userId },
+            orderBy: { createdAt: 'asc' },
+            select: { createdAt: true }
+        })
+
+        let activeDays = 0
+        if (firstCase) {
+            const startDate = new Date(firstCase.createdAt)
+            const endDate = new Date()
+            const diffTime = Math.abs(endDate.getTime() - startDate.getTime())
+            activeDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
         }
 
-        if (user.role === 'GURU' || user.role === 'ADMIN') {
-            
-            const casesHandled = await prisma.violationCase.count({
-                where: { inputById: userId }
-            })
-
-const studentsHandled = await prisma.violationCase.groupBy({
-                by: ['studentId'],
-                where: { inputById: userId }
-            })
-
-const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-            const violationsThisMonth = await prisma.violationCase.count({
-                where: {
-                    inputById: userId,
-                    createdAt: {
-                        gte: startOfMonth
+        const recentCases = await prisma.violationCase.findMany({
+            where: { inputById: userId },
+            take: 5,
+            orderBy: { createdAt: 'desc' },
+            select: {
+                id: true,
+                caseNumber: true,
+                description: true,
+                status: true,
+                createdAt: true,
+                student: {
+                    select: {
+                        name: true
+                    }
+                },
+                violation: {
+                    select: {
+                        name: true
                     }
                 }
-            })
-
-            stats = {
-                casesHandled,
-                studentsHandled: studentsHandled.length,
-                violationsReported: casesHandled,
-                activeThisMonth: violationsThisMonth
             }
-        }
+        })
 
-        return { user, stats }
+        const formattedCases = recentCases.map(c => ({
+            id: c.id,
+            title: `${c.caseNumber} - ${c.violation.name}`,
+            status: c.status,
+            createdAt: c.createdAt.toISOString(),
+            student: {
+                name: c.student.name
+            }
+        }))
+
+        return {
+            totalCasesReviewed,
+            totalCasesResolved,
+            activeDays,
+            recentCases: formattedCases
+        }
     } catch (error) {
         console.error('Error fetching user stats:', error)
         throw new Error('Gagal mengambil statistik user')

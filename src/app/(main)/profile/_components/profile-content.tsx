@@ -1,17 +1,16 @@
 'use client'
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useTransition } from "react"
 import { useSession, signIn, signOut } from "next-auth/react"
 import Image from "next/image"
 import DynamicAvatar from "@/components/dynamic-avatar"
-import { useUserStats } from "@/lib/hooks/useUserStats"
+import { getUserStats } from "../actions"
 import { 
     IoPerson, 
     IoMail, 
     IoShield, 
     IoSave, 
-    IoCamera, 
-    IoSchool,
+    IoCamera,
     IoCalendar,
     IoTime,
     IoEye,
@@ -19,37 +18,100 @@ import {
     IoWarning
 } from "react-icons/io5"
 
+interface UserStats {
+    totalCasesReviewed: number
+    totalCasesResolved: number
+    activeDays: number
+    recentCases: Array<{
+        id: string
+        title: string
+        status: string
+        createdAt: string
+        student: {
+            name: string
+        }
+    }>
+}
+
 const ProfileContent = () => {
     const { data: session, status, update } = useSession()
-    const { stats, loading: statsLoading, error: statsError } = useUserStats(session?.user?.id)
+    const [isPending, startTransition] = useTransition()
+    const [stats, setStats] = useState<UserStats>({
+        totalCasesReviewed: 0,
+        totalCasesResolved: 0,
+        activeDays: 0,
+        recentCases: []
+    })
+    const [statsLoading, setStatsLoading] = useState(true)
+    const [statsError, setStatsError] = useState<string | null>(null)
     const [isEditing, setIsEditing] = useState(false)
+    const [isSaving, setIsSaving] = useState(false)
     const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
     const [profileImage, setProfileImage] = useState('')
     const [uploadSuccess, setUploadSuccess] = useState(false)
+    const [saveSuccess, setSaveSuccess] = useState(false)
     const [formData, setFormData] = useState({
-        name: session?.user?.name || '',
-        email: session?.user?.email || '',
+        name: '',
+        email: '',
         phone: '',
-        department: '',
-        position: ''
+        address: ''
     })
 
-useEffect(() => {
+    useEffect(() => {
         if (session?.user?.image) {
             setProfileImage(session.user.image)
         }
     }, [session])
 
+    useEffect(() => {
+        if (!session?.user?.id) {
+            setStatsLoading(false)
+            return
+        }
+
+        const loadProfileAndStats = async () => {
+            try {
+                setStatsLoading(true)
+                setStatsError(null)
+                
+                const { getUserProfile, getUserStats } = await import('../actions')
+                
+                const [userProfile, userStats] = await Promise.all([
+                    getUserProfile(session.user.id),
+                    getUserStats(session.user.id)
+                ])
+
+                setFormData({
+                    name: userProfile.name || '',
+                    email: userProfile.email || '',
+                    phone: userProfile.phone || '',
+                    address: userProfile.address || ''
+                })
+
+                setStats(userStats)
+            } catch (error) {
+                console.error('Error loading profile and stats:', error)
+                setStatsError(error instanceof Error ? error.message : 'Gagal memuat data')
+            } finally {
+                setStatsLoading(false)
+            }
+        }
+
+        startTransition(() => {
+            loadProfileAndStats()
+        })
+    }, [session?.user?.id])
+
     const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0]
         if (!file) return
 
-if (!file.type.startsWith('image/')) {
+        if (!file.type.startsWith('image/')) {
             alert('Silakan pilih file gambar yang valid')
             return
         }
 
-if (file.size > 5 * 1024 * 1024) {
+        if (file.size > 5 * 1024 * 1024) {
             alert('Ukuran file terlalu besar. Maksimal 5MB')
             return
         }
@@ -57,41 +119,41 @@ if (file.size > 5 * 1024 * 1024) {
         setIsUploadingPhoto(true)
         
         try {
-            
             const formData = new FormData()
             formData.append('photo', file)
 
-const response = await fetch('/api/profile/photo', {
-                method: 'POST',
-                body: formData
+            startTransition(async () => {
+                try {
+                    const { updateProfilePhoto } = await import('../actions')
+                    const result = await updateProfilePhoto(formData)
+                    
+                    if (result.success && result.photoUrl) {
+                        setProfileImage(result.photoUrl)
+                        setUploadSuccess(true)
+                        setTimeout(() => setUploadSuccess(false), 3000)
+
+                        await update({ 
+                            ...session, 
+                            user: { 
+                                ...session?.user, 
+                                image: result.photoUrl 
+                            } 
+                        })
+
+                        setTimeout(() => {
+                            window.location.reload()
+                        }, 500)
+                    }
+                } catch (error) {
+                    console.error('Error uploading photo:', error)
+                    alert(error instanceof Error ? error.message : 'Gagal mengupload foto. Silakan coba lagi.')
+                } finally {
+                    setIsUploadingPhoto(false)
+                }
             })
-
-            const result = await response.json()
-
-            if (!response.ok) {
-                throw new Error(result.error || 'Upload failed')
-            }
-
-setProfileImage(result.imageUrl)
-            setUploadSuccess(true)
-            setTimeout(() => setUploadSuccess(false), 3000)
-
-await update({ 
-                ...session, 
-                user: { 
-                    ...session?.user, 
-                    image: result.imageUrl 
-                } 
-            })
-
-setTimeout(() => {
-                window.location.reload()
-            }, 500)
-            
         } catch (error) {
-            console.error('Error uploading photo:', error)
+            console.error('Error preparing upload:', error)
             alert('Gagal mengupload foto. Silakan coba lagi.')
-        } finally {
             setIsUploadingPhoto(false)
         }
     }
@@ -109,7 +171,7 @@ setTimeout(() => {
         input.click()
     }
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target
         setFormData(prev => ({
             ...prev,
@@ -119,33 +181,48 @@ setTimeout(() => {
 
     const handleSave = async () => {
         try {
-            setIsUploadingPhoto(true)
-            
-            const response = await fetch('/api/profile', {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(formData),
-            })
-
-            if (response.ok) {
-                setIsEditing(false)
-                await update({
-                    ...session,
-                    user: {
-                        ...session?.user,
-                        ...formData
-                    }
-                })
-            } else {
-                throw new Error('Failed to update profile')
+            if (!formData.name.trim()) {
+                alert('Nama tidak boleh kosong')
+                return
             }
+
+            setIsSaving(true)
+            
+            startTransition(async () => {
+                try {
+                    const { updateUserProfile } = await import('../actions')
+                    const result = await updateUserProfile({
+                        name: formData.name,
+                        phone: formData.phone,
+                        address: formData.address
+                    })
+
+                    if (result.success) {
+                        setIsEditing(false)
+                        setSaveSuccess(true)
+                        setTimeout(() => setSaveSuccess(false), 3000)
+
+                        await update({
+                            ...session,
+                            user: {
+                                ...session?.user,
+                                name: result.user.name,
+                                phone: result.user.phone,
+                                address: result.user.address
+                            }
+                        })
+                    }
+                } catch (error) {
+                    console.error('Error updating profile:', error)
+                    alert(error instanceof Error ? error.message : 'Gagal mengupdate profil. Silakan coba lagi.')
+                } finally {
+                    setIsSaving(false)
+                }
+            })
         } catch (error) {
-            console.error('Error updating profile:', error)
+            console.error('Error preparing update:', error)
             alert('Gagal mengupdate profil. Silakan coba lagi.')
-        } finally {
-            setIsUploadingPhoto(false)
+            setIsSaving(false)
         }
     }
 
@@ -313,9 +390,8 @@ setTimeout(() => {
                                         type="email"
                                         name="email"
                                         value={formData.email}
-                                        onChange={handleInputChange}
-                                        disabled={!isEditing}
-                                        className="input w-full pl-10 bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl disabled:bg-slate-50"
+                                        disabled
+                                        className="input w-full pl-10 bg-slate-50 border-slate-200 rounded-xl text-slate-600"
                                         placeholder="Masukkan email"
                                     />
                                 </div>
@@ -347,54 +423,54 @@ setTimeout(() => {
                                 </div>
                             </div>
 
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-slate-700">Departemen</label>
-                                <div className="relative">
-                                    <IoSchool className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                    <select 
-                                        name="department"
-                                        value={formData.department}
-                                        onChange={handleInputChange}
-                                        disabled={!isEditing}
-                                        className="select w-full pl-10 bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl disabled:bg-slate-50"
-                                    >
-                                        <option value="">Pilih Departemen</option>
-                                        <option value="akademik">Akademik</option>
-                                        <option value="kesiswaan">Kesiswaan</option>
-                                        <option value="kurikulum">Kurikulum</option>
-                                        <option value="administrasi">Administrasi</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-slate-700">Posisi</label>
-                                <input 
-                                    type="text"
-                                    name="position"
-                                    value={formData.position}
+                            <div className="space-y-2 md:col-span-2">
+                                <label className="text-sm font-medium text-slate-700">Alamat</label>
+                                <textarea 
+                                    name="address"
+                                    value={formData.address}
                                     onChange={handleInputChange}
                                     disabled={!isEditing}
-                                    className="input w-full bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl disabled:bg-slate-50"
-                                    placeholder="Masukkan posisi/jabatan"
+                                    rows={3}
+                                    className="textarea w-full bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl disabled:bg-slate-50"
+                                    placeholder="Masukkan alamat lengkap"
                                 />
                             </div>
                         </div>
+
+                        {saveSuccess && (
+                            <div className="mt-4 p-3 bg-green-100 border border-green-200 rounded-lg">
+                                <p className="text-sm text-green-700 flex items-center gap-2">
+                                    <IoCheckmarkCircle className="w-4 h-4" />
+                                    Profil berhasil diupdate!
+                                </p>
+                            </div>
+                        )}
 
                         {isEditing && (
                             <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-slate-100">
                                 <button 
                                     onClick={() => setIsEditing(false)}
-                                    className="btn bg-slate-200 hover:bg-slate-300 border-0 text-slate-700 rounded-xl"
+                                    disabled={isSaving}
+                                    className="btn bg-slate-200 hover:bg-slate-300 border-0 text-slate-700 rounded-xl disabled:bg-slate-100"
                                 >
                                     Batal
                                 </button>
                                 <button 
                                     onClick={handleSave}
-                                    className="btn bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 border-0 text-white rounded-xl"
+                                    disabled={isSaving}
+                                    className="btn bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 border-0 text-white rounded-xl disabled:opacity-50"
                                 >
-                                    <IoSave className="w-4 h-4" />
-                                    Simpan Perubahan
+                                    {isSaving ? (
+                                        <>
+                                            <span className="loading loading-spinner loading-sm"></span>
+                                            Menyimpan...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <IoSave className="w-4 h-4" />
+                                            Simpan Perubahan
+                                        </>
+                                    )}
                                 </button>
                             </div>
                         )}

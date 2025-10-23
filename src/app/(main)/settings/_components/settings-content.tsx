@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import { useSession, signOut } from "next-auth/react"
 import { 
     IoShield,
@@ -16,10 +16,14 @@ import {
 
 const SettingsContent = () => {
     const { data: session } = useSession()
+    const [isPending, startTransition] = useTransition()
     const [activeTab, setActiveTab] = useState('account')
     const [showCurrentPassword, setShowCurrentPassword] = useState(false)
     const [showNewPassword, setShowNewPassword] = useState(false)
     const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+    const [isChangingPassword, setIsChangingPassword] = useState(false)
+    const [passwordSuccess, setPasswordSuccess] = useState(false)
+    const [passwordError, setPasswordError] = useState('')
     
     const [passwordForm, setPasswordForm] = useState({
         currentPassword: '',
@@ -32,16 +36,77 @@ const SettingsContent = () => {
             ...passwordForm,
             [e.target.name]: e.target.value
         })
+        setPasswordError('')
+        setPasswordSuccess(false)
     }
 
-    const handleChangePassword = () => {
-        if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-            alert('Password baru dan konfirmasi password tidak sama')
-            return
+    const handleChangePassword = async () => {
+        try {
+            setPasswordError('')
+            setPasswordSuccess(false)
+
+            if (!passwordForm.currentPassword) {
+                setPasswordError('Password saat ini harus diisi')
+                return
+            }
+
+            if (!passwordForm.newPassword) {
+                setPasswordError('Password baru harus diisi')
+                return
+            }
+
+            if (passwordForm.newPassword.length < 8) {
+                setPasswordError('Password baru minimal 8 karakter')
+                return
+            }
+
+            if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+                setPasswordError('Password baru dan konfirmasi password tidak sama')
+                return
+            }
+
+            if (passwordForm.currentPassword === passwordForm.newPassword) {
+                setPasswordError('Password baru tidak boleh sama dengan password saat ini')
+                return
+            }
+
+            setIsChangingPassword(true)
+
+            startTransition(async () => {
+                try {
+                    const { changePassword } = await import('../actions')
+                    const result = await changePassword({
+                        currentPassword: passwordForm.currentPassword,
+                        newPassword: passwordForm.newPassword
+                    })
+
+                    if (result.success) {
+                        setPasswordSuccess(true)
+                        setPasswordForm({ 
+                            currentPassword: '', 
+                            newPassword: '', 
+                            confirmPassword: '' 
+                        })
+                        setShowCurrentPassword(false)
+                        setShowNewPassword(false)
+                        setShowConfirmPassword(false)
+
+                        setTimeout(() => {
+                            setPasswordSuccess(false)
+                        }, 5000)
+                    }
+                } catch (error) {
+                    console.error('Error changing password:', error)
+                    setPasswordError(error instanceof Error ? error.message : 'Gagal mengubah password')
+                } finally {
+                    setIsChangingPassword(false)
+                }
+            })
+        } catch (error) {
+            console.error('Error preparing password change:', error)
+            setPasswordError('Terjadi kesalahan. Silakan coba lagi.')
+            setIsChangingPassword(false)
         }
-        console.log('Changing password...', passwordForm)
-        
-        setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
     }
 
     const handleLogoutAllDevices = async () => {
@@ -176,6 +241,24 @@ const SettingsContent = () => {
                                     <div className="p-6 border border-slate-200 bg-slate-50 rounded-xl">
                                         <h4 className="font-medium text-slate-800 mb-4">Ganti Password</h4>
                                         
+                                        {passwordSuccess && (
+                                            <div className="mb-4 p-3 bg-green-100 border border-green-200 rounded-lg">
+                                                <p className="text-sm text-green-700 flex items-center gap-2">
+                                                    <IoCheckmarkCircle className="w-4 h-4" />
+                                                    Password berhasil diubah! Gunakan password baru Anda saat login berikutnya.
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {passwordError && (
+                                            <div className="mb-4 p-3 bg-red-100 border border-red-200 rounded-lg">
+                                                <p className="text-sm text-red-700 flex items-center gap-2">
+                                                    <IoWarning className="w-4 h-4" />
+                                                    {passwordError}
+                                                </p>
+                                            </div>
+                                        )}
+                                        
                                         <div className="space-y-4">
                                             <div className="space-y-2">
                                                 <label className="text-sm font-medium text-slate-700">Password Saat Ini</label>
@@ -185,13 +268,15 @@ const SettingsContent = () => {
                                                         name="currentPassword"
                                                         value={passwordForm.currentPassword}
                                                         onChange={handlePasswordChange}
-                                                        className="input w-full pr-10 bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl"
+                                                        disabled={isChangingPassword}
+                                                        className="input w-full pr-10 bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl disabled:bg-slate-50 disabled:cursor-not-allowed"
                                                         placeholder="Masukkan password saat ini"
                                                     />
                                                     <button
                                                         type="button"
                                                         onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                                                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                                        disabled={isChangingPassword}
+                                                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 disabled:cursor-not-allowed"
                                                     >
                                                         {showCurrentPassword ? <IoEyeOff className="w-4 h-4" /> : <IoEye className="w-4 h-4" />}
                                                     </button>
@@ -206,13 +291,15 @@ const SettingsContent = () => {
                                                         name="newPassword"
                                                         value={passwordForm.newPassword}
                                                         onChange={handlePasswordChange}
-                                                        className="input w-full pr-10 bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl"
-                                                        placeholder="Masukkan password baru"
+                                                        disabled={isChangingPassword}
+                                                        className="input w-full pr-10 bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                                        placeholder="Masukkan password baru (min. 8 karakter)"
                                                     />
                                                     <button
                                                         type="button"
                                                         onClick={() => setShowNewPassword(!showNewPassword)}
-                                                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                                        disabled={isChangingPassword}
+                                                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 disabled:cursor-not-allowed"
                                                     >
                                                         {showNewPassword ? <IoEyeOff className="w-4 h-4" /> : <IoEye className="w-4 h-4" />}
                                                     </button>
@@ -227,13 +314,15 @@ const SettingsContent = () => {
                                                         name="confirmPassword"
                                                         value={passwordForm.confirmPassword}
                                                         onChange={handlePasswordChange}
-                                                        className="input w-full pr-10 bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl"
+                                                        disabled={isChangingPassword}
+                                                        className="input w-full pr-10 bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl disabled:bg-slate-50 disabled:cursor-not-allowed"
                                                         placeholder="Konfirmasi password baru"
                                                     />
                                                     <button
                                                         type="button"
                                                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                                        disabled={isChangingPassword}
+                                                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 disabled:cursor-not-allowed"
                                                     >
                                                         {showConfirmPassword ? <IoEyeOff className="w-4 h-4" /> : <IoEye className="w-4 h-4" />}
                                                     </button>
@@ -242,11 +331,20 @@ const SettingsContent = () => {
 
                                             <button 
                                                 onClick={handleChangePassword}
-                                                className="btn bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 border-0 text-white rounded-xl"
-                                                disabled={!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword}
+                                                disabled={isChangingPassword || !passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword}
+                                                className="btn bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 border-0 text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
-                                                <IoKey className="w-4 h-4" />
-                                                Ganti Password
+                                                {isChangingPassword ? (
+                                                    <>
+                                                        <span className="loading loading-spinner loading-sm"></span>
+                                                        Mengubah Password...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <IoKey className="w-4 h-4" />
+                                                        Ganti Password
+                                                    </>
+                                                )}
                                             </button>
                                         </div>
                                     </div>
